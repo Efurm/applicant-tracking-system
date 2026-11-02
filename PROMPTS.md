@@ -30,6 +30,28 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 2: candidates create, view, edit, list, search (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 2`
+2. `yes` (the three TDD behaviors: case-insensitive email constraint in the DB, duplicate-email form error linking to the existing candidate, list search by name/email)
+3. `i approve` (RED test for behavior 1)
+4. `yes` (move on to behavior 2)
+5. `i approve` (RED test for behavior 2)
+6. `yes` (move on to behavior 3)
+7. `i approve` (RED test for behavior 3)
+8. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** A `Candidate` model (first/last name, email, phone, LinkedIn/portfolio URL, resume URL, notes, archived flag, timestamps) whose first migration includes a unique constraint on `Lower("email")`. A new `tracker/services.py` holds the rules: `create_candidate` and `update_candidate` lowercase the email and call `check_email_is_free`, which raises `DuplicateCandidateEmail` carrying the existing record, and `search_candidates` matches first name, last name, or email without regard to case. `CandidateForm.clean_email` turns the duplicate error into an Email-field error that links to the existing candidate, on both create and edit. DaisyUI pages for the list (with `?q=` search), create, detail, and edit live under `/candidates/`, and the nav's Candidates link now works. Creating a candidate redirects to their page. There are 32 passing tests: 20 new, of which 3 behaviors (7 test cases) were driven by TDD. CLAUDE.md's `tracker` description was updated.
+- **Deviations:** All three proposed TDD behaviors and their RED tests were approved unchanged. Without asking, the agent left full-name search ("Jo Park") unsupported, since the plan only asks for name or email search. The CLAUDE.md edits that were already uncommitted at the start of the session were committed along with this phase.
+- **Sideways:**
+  - Behavior 1's migration was generated before the constraint existed, so the test could start RED. It was then deleted and regenerated so `0001_initial` creates the constraint directly.
+  - Behavior 2's first draft used `errors["email"]`, which crashed with a `KeyError` instead of failing an assertion. It was changed to `errors.get("email", [])` before approval. The first fix also didn't work: catching the service error in the view never ran, because Django's `ModelForm` validates model constraints inside `is_valid()` and refused the form first with a generic non-field error. The check moved into `clean_email`, which calls the service.
+  - During behavior 3, a combined shell script hung on a stray `cat > /tmp/x` waiting for input. It was stopped, the partly applied edits were checked, and the rest were reapplied.
+  - A normal test caught a real bug: `request.POST or None` treats an empty POST as no submission, so a blank form came back with no errors. Forms are now bound on every POST.
+  - Ruff's DJ012 rule required `get_absolute_url` to come before the `full_name` property.
+
 ## 2026-11-02 — Implemented Phase 1: project skeleton and authentication (TDD)
 
 ### Prompts
