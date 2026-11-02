@@ -193,6 +193,7 @@ class StageChange(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="stage_changes"
     )
     changed_at = models.DateTimeField(default=timezone.now)
+    note = models.TextField(blank=True)
 
     class Meta:
         ordering = ["changed_at", "pk"]

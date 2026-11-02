@@ -293,8 +293,10 @@ def allowed_next_stages(stage, user):
 
 
 @transaction.atomic
-def move_application(application, to_stage, user):
+def move_application(application, to_stage, user, note=""):
     """Move ``application`` to ``to_stage`` and record a StageChange by ``user``.
+
+    ``note`` is an optional reason for the move, stored on the StageChange.
 
     Every stage change goes through here. The move must be one of
     ``allowed_next_stages`` for the application's current stage (read fresh
@@ -309,6 +311,10 @@ def move_application(application, to_stage, user):
     application.stage = to_stage
     application.save(update_fields=["stage", "updated_at"])
     StageChange.objects.create(
-        application=application, from_stage=from_stage, to_stage=to_stage, changed_by=user
+        application=application,
+        from_stage=from_stage,
+        to_stage=to_stage,
+        changed_by=user,
+        note=note.strip(),
     )
     return application

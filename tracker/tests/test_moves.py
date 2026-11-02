@@ -2,6 +2,7 @@ import pytest
 from django.core.exceptions import ValidationError
 from django.db.models import ProtectedError
 from django.urls import reverse
+from django.utils import dateformat, timezone
 from django.utils.html import escape
 
 from tracker import services
@@ -63,6 +64,19 @@ def test_move_application_updates_the_stage_and_records_who_moved_it_even_on_a_c
         Stage.FINAL_REVIEW,
         staff_user,
     )
+
+
+def test_move_application_stores_an_optional_note_on_the_stage_change(staff_user, make_application):
+    application = make_application(Stage.SCREENING)
+
+    services.move_application(application, Stage.INTERVIEW, staff_user)
+    services.move_application(application, Stage.OFFER, staff_user, note="Strong panel feedback")
+
+    assert [c.note for c in application.stage_changes.all()] == [
+        "",
+        "",
+        "Strong panel feedback",
+    ]
 
 
 @pytest.mark.parametrize("to_stage", [Stage.APPLIED, Stage.INTERVIEW, "not-a-stage"])
@@ -330,3 +344,75 @@ def test_a_user_with_stage_changes_cannot_be_deleted(staff_user, make_applicatio
 
     with pytest.raises(ProtectedError):
         staff_user.delete()
+
+
+def test_the_panel_shows_a_timeline_from_the_application_date_through_every_stage_change(
+    staff_client, admin_user, make_application
+):
+    application = make_application(Stage.SCREENING)
+    services.move_application(application, Stage.INTERVIEW, admin_user, note="Great portfolio")
+    first, second = application.stage_changes.all()
+
+    response = staff_client.get(f"{WORKSPACE_URL}?stage=all&selected={application.pk}")
+
+    entries = marked(response, "data-timeline-entry")
+    assert [value for value, _, _ in entries] == ["applied", str(first.pk), str(second.pk)]
+    _, _, applied_text = entries[0]
+    assert dateformat.format(application.applied_on, "M j, Y") in applied_text
+    _, _, first_text = entries[1]
+    assert "Applied → Screening" in first_text
+    assert "Sam Staff" in first_text
+    assert dateformat.format(timezone.localtime(first.changed_at), "M j, Y") in first_text
+    _, _, second_text = entries[2]
+    assert "Screening → Interview" in second_text
+    assert "Alice Admin" in second_text
+    assert "Great portfolio" in second_text
+
+
+def test_an_htmx_move_saves_the_posted_note_and_returns_the_timeline_with_the_new_entry(
+    staff_client, staff_user, make_application
+):
+    application = make_application(Stage.SCREENING)
+    url = reverse("tracker:application_move", args=[application.pk])
+
+    response = staff_client.post(
+        url,
+        {"stage": Stage.OFFER, "note": "Fast-tracked after a referral"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert "<html" not in response.content.decode()
+    change = application.stage_changes.last()
+    assert (change.to_stage, change.changed_by, change.note) == (
+        Stage.OFFER,
+        staff_user,
+        "Fast-tracked after a referral",
+    )
+    value, _, text = marked(response, "data-timeline-entry")[-1]
+    assert value == str(change.pk)
+    assert "Screening → Offer" in text
+    assert "Fast-tracked after a referral" in text
+
+
+def test_the_move_form_has_one_optional_note_field_shared_by_every_move_button(
+    staff_client, make_application
+):
+    application = make_application(Stage.INTERVIEW)
+
+    response = staff_client.get(f"{WORKSPACE_URL}?selected={application.pk}")
+
+    notes = marked(response, "data-move-note")
+    assert len(notes) == 1
+    _, attrs, _ = notes[0]
+    assert attrs["name"] == "note"
+    assert "required" not in attrs
+
+
+def test_a_move_without_htmx_saves_the_posted_note(staff_client, make_application):
+    application = make_application(Stage.APPLIED)
+    url = reverse("tracker:application_move", args=[application.pk])
+
+    response = staff_client.post(url, {"stage": Stage.REJECTED, "note": "Role filled internally"})
+
+    assert response.status_code == 302
+    assert application.stage_changes.last().note == "Role filled internally"

@@ -30,6 +30,36 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 10: move notes and the stage-history timeline (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 10`
+2. `go ahead` (the three TDD behaviors: the service stores a note, the panel shows a timeline, an HTMX move with a note returns the new timeline entry)
+3. `go ahead` (RED test for behavior 1)
+4. `go ahead` (move on to behavior 2)
+5. `go ahead` (RED test for behavior 2, showing the mover's full name with a username fallback)
+6. `go ahead` (move on to behavior 3)
+7. `go ahead` (RED test for behavior 3)
+8. `go ahead` (feedback loops, then finish the phase)
+
+### Summary
+- **Outcome:** Stage moves can carry an optional note, and the detail panel shows the application's stage history.
+  - **Model:** `StageChange.note` (blank allowed), migration `0006_stagechange_note`.
+  - **Service:** `move_application(application, to_stage, user, note="")` stores the note, stripped of surrounding whitespace.
+  - **View:** `application_move` passes `request.POST.get("note", "")` to the service. `_panel_context` adds `stage_changes`, so both the workspace page and the HTMX move response render the timeline.
+  - **Panel:** the move form has one optional "Note" textarea (`data-move-note`) shared by the forward, Reject, and Withdraw buttons. A "Stage history" section uses DaisyUI's vertical timeline. It starts with an `applied` entry showing the application date, then lists each change: from → to, who made it (full name, or username if they have none), the date and time, and the note if there is one. Hooks are `data-timeline-entry` and `data-timeline-note`.
+  - **Tests:** 157 pass (up from 152). New tests cover:
+    - the note being stored, and blank by default
+    - the timeline's order and contents on a workspace GET
+    - an HTMX move with a note saving it and returning the new entry
+    - the form having a single optional note field
+    - a non-HTMX move saving its note
+  - CLAUDE.md's status, inventory, and test hooks were updated, and Phase 11 is listed as next.
+- **Deviations:** None. The user approved every proposal as offered. The agent flagged two extras that go beyond the tests (stripping notes, and showing the time of each move as well as the date), and the user kept both.
+- **Sideways:**
+  - A foreground run of `test_moves.py` hit the 2-minute tool timeout and moved to the background, where it passed. Later module runs were started in the background from the outset.
+  - `ruff format` reflowed `test_moves.py` while the full suite was running. It was a formatting-only change, and Ruff then passed.
+
 ## 2026-11-02 — Implemented Phase 9: Rejected, Withdrawn, and the final lock (TDD)
 
 ### Prompts

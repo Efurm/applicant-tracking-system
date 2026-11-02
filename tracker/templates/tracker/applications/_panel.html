@@ -53,6 +53,11 @@
         hx-target="#application-panel" hx-swap="outerHTML"
         class="mt-4" data-move-form>
     {% csrf_token %}
+    <label class="block mb-4">
+      <span class="text-sm font-semibold">Note <span class="font-normal opacity-70">(optional)</span></span>
+      <textarea name="note" rows="2" class="textarea textarea-sm w-full mt-1"
+                placeholder="Why is this application moving?" data-move-note></textarea>
+    </label>
     {% if forward_moves %}
     <div class="text-sm font-semibold mb-2">Move to</div>
     <div class="flex flex-wrap gap-2">
@@ -74,6 +79,33 @@
     {% endif %}
   </form>
   {% endif %}
+
+  <div class="divider text-xs">Stage history</div>
+  <ul class="timeline timeline-vertical timeline-compact text-sm" aria-label="Stage history">
+    <li data-timeline-entry="applied">
+      <div class="timeline-middle"><span class="block w-3 h-3 rounded-full bg-base-300"></span></div>
+      <div class="timeline-end mb-4">
+        <div class="font-medium">Applied</div>
+        <div class="text-xs opacity-70"><time datetime="{{ application.applied_on|date:'Y-m-d' }}">{{ application.applied_on|date:"M j, Y" }}</time></div>
+      </div>
+      {% if stage_changes %}<hr>{% endif %}
+    </li>
+    {% for change in stage_changes %}
+    <li data-timeline-entry="{{ change.pk }}">
+      <hr>
+      <div class="timeline-middle"><span class="block w-3 h-3 rounded-full bg-primary"></span></div>
+      <div class="timeline-end mb-4">
+        <div class="font-medium">{{ change.get_from_stage_display }} → {{ change.get_to_stage_display }}</div>
+        <div class="text-xs opacity-70">
+          {{ change.changed_by.get_full_name|default:change.changed_by.username }} ·
+          <time datetime="{{ change.changed_at|date:'c' }}">{{ change.changed_at|date:"M j, Y g:i A" }}</time>
+        </div>
+        {% if change.note %}<p class="mt-1 whitespace-pre-line" data-timeline-note>{{ change.note }}</p>{% endif %}
+      </div>
+      {% if not forloop.last %}<hr>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
 
   {% if other_applications %}
   <div class="divider text-xs">Other applications by this candidate</div>
