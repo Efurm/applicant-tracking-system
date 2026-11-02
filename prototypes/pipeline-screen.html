@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="corporate">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE · Pipeline Screen Variants</title>
+<!-- Prototype only: Tailwind + DaisyUI from CDN. Production will use django-tailwind-cli. -->
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style>
+  .flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { background-color: #fde68a; } to { background-color: transparent; } }
+</style>
+</head>
+<body class="bg-base-200 min-h-screen">
+
+<div id="app"></div>
+<div id="toast" class="toast toast-top toast-center z-50"></div>
+
+<!-- ===== Prototype switcher (not part of the design) ===== -->
+<div id="switcher" style="position:fixed;right:16px;bottom:16px;z-index:100;background:#111;color:#fff;font:13px system-ui;border-radius:10px;padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.35);min-width:270px">
+  <div style="font-size:10px;letter-spacing:.08em;opacity:.6;margin-bottom:6px">PROTOTYPE SWITCHER · ← → keys</div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button id="prevV" style="background:#333;color:#fff;border:0;border-radius:6px;padding:4px 10px;cursor:pointer">←</button>
+    <div id="vLabel" style="flex:1;text-align:center;font-weight:600"></div>
+    <button id="nextV" style="background:#333;color:#fff;border:0;border-radius:6px;padding:4px 10px;cursor:pointer">→</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;margin-top:8px">
+    <span style="opacity:.7">Acting as:</span>
+    <button data-role="Admin" class="roleBtn" style="border:0;border-radius:6px;padding:3px 10px;cursor:pointer">Admin</button>
+    <button data-role="Staff" class="roleBtn" style="border:0;border-radius:6px;padding:3px 10px;cursor:pointer">Staff</button>
+    <button id="resetData" style="margin-left:auto;background:#333;color:#fff;border:0;border-radius:6px;padding:3px 8px;cursor:pointer">Reset</button>
+  </div>
+</div>
+
+<script>
+/* ================= Shared data + rules (same for every variant) ================= */
+const PIPELINE = ['Applied','Screening','Interview','Final Review','Offer','Hired'];
+const IN_PROGRESS = ['Applied','Screening','Interview','Final Review','Offer'];
+const FINAL = ['Hired','Rejected','Withdrawn'];
+const isFinal = s => FINAL.includes(s);
+
+// Question 9 rules: forward with skipping, Rejected/Withdrawn from anywhere, finals locked, Admin may reopen.
+function allowedMoves(stage, role) {
+  if (isFinal(stage)) return role === 'Admin' ? IN_PROGRESS.map(s => ({ stage: s, reopen: true })) : [];
+  const fwd = PIPELINE.slice(PIPELINE.indexOf(stage) + 1);
+  return [...fwd, 'Rejected', 'Withdrawn'].map(s => ({ stage: s, reopen: false }));
+}
+
+const JOBS = [
+  { id: 1, title: 'Backend Developer', dept: 'Engineering', location: 'Remote', type: 'Full-time', status: 'Open' },
+  { id: 2, title: 'Sales Associate',   dept: 'Sales',       location: 'Dallas, TX', type: 'Full-time', status: 'Open' },
+  { id: 3, title: 'Marketing Intern',  dept: 'Marketing',   location: 'Amarillo, TX', type: 'Internship', status: 'Closed' },
+];
+const SEED = [
+  [1,'Jane Doe','jane.doe@mail.com','Job Board','Applied','Oct 28'],
+  [1,'Marcus Lee','marcus.lee@mail.com','Referral','Screening','Oct 22'],
+  [1,'Priya Shah','priya.shah@mail.com','Company Website','Interview','Oct 15'],
+  [1,'Diego Alvarez','diego.a@mail.com','Job Board','Interview','Oct 14'],
+  [1,'Hannah Kim','hannah.kim@mail.com','Referral','Final Review','Oct 09'],
+  [1,'Tom Rivera','tom.rivera@mail.com','Other','Rejected','Oct 05'],
+  [2,'Aisha Bello','aisha.b@mail.com','Company Website','Applied','Oct 30'],
+  [2,'Chris Nguyen','chris.n@mail.com','Job Board','Applied','Oct 29'],
+  [2,'Jane Doe','jane.doe@mail.com','Referral','Screening','Oct 20'],
+  [2,'Sam Patel','sam.patel@mail.com','Job Board','Offer','Oct 02'],
+  [2,'Olivia Brooks','olivia.b@mail.com','Other','Withdrawn','Sep 28'],
+  [3,'Leo Martinez','leo.m@mail.com','Company Website','Interview','Sep 20'],
+  [3,'Grace Chen','grace.chen@mail.com','Referral','Hired','Sep 10'],
+  [3,'Noah Wilson','noah.w@mail.com','Job Board','Rejected','Sep 08'],
+];
+const freshApps = () => SEED.map(([jobId, name, email, source, stage, applied], i) => ({ id: i + 1, jobId, name, email, source, stage, applied }));
+
+const S = {
+  apps: freshApps(),
+  role: localStorage.getItem('proto-role') || 'Admin',
+  variant: +(localStorage.getItem('proto-variant') || 0),
+  jobId: 1,              // A & B
+  stageFilter: null,     // B
+  selectedApp: 3,        // C
+  cJob: 'all', cStage: 'active', cSearch: '', // C
+  lastMoved: null,
+};
+const job = id => JOBS.find(j => j.id === id);
+
+function moveApp(appId, stage) {
+  const a = S.apps.find(x => x.id === appId);
+  const ok = allowedMoves(a.stage, S.role).some(m => m.stage === stage);
+  if (!ok) return toast(`Not allowed: ${a.stage} → ${stage} for ${S.role}.`, 'alert-error');
+  const from = a.stage; a.stage = stage; S.lastMoved = appId;
+  render();
+  toast(`${isFinal(from) ? 'Reopened' : 'Moved'} ${a.name}: ${from} → ${stage}. (In the real app, HTMX swaps just this part; no page reload.)`, 'alert-success');
+}
+function toast(msg, cls) {
+  const t = document.getElementById('toast');
+  t.innerHTML = `<div class="alert ${cls} text-sm max-w-xl"><span>${msg}</span></div>`;
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.innerHTML = '', 3500);
+}
+const stageBadge = s => {
+  const cls = s === 'Hired' ? 'badge-success' : s === 'Rejected' ? 'badge-error' : s === 'Withdrawn' ? 'badge-ghost' : s === 'Offer' ? 'badge-warning' : 'badge-primary badge-soft';
+  return `<span class="badge badge-sm ${cls}">${s}</span>`;
+};
+const jobStatusBadge = j => j.status === 'Open'
+  ? `<span class="badge badge-success badge-soft">Open</span>`
+  : `<span class="badge badge-neutral badge-soft">Closed to new applicants</span>`;
+const flash = id => S.lastMoved === id ? 'flash' : '';
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function moveMenu(a, label = 'Move') {
+  const moves = allowedMoves(a.stage, S.role);
+  if (!moves.length) return `<span class="text-xs opacity-50">Final</span>`;
+  const btnLabel = isFinal(a.stage) ? 'Reopen…' : label;
+  return `<div class="dropdown dropdown-end">
+    <div tabindex="0" role="button" class="btn btn-xs ${isFinal(a.stage) ? 'btn-outline btn-warning' : 'btn-ghost'}">${btnLabel} ▾</div>
+    <ul tabindex="0" class="dropdown-content menu menu-sm bg-base-100 rounded-box z-20 w-44 p-1 shadow">
+      ${moves.map(m => `<li><a data-move="${a.id}" data-stage="${m.stage}" class="${['Rejected','Withdrawn'].includes(m.stage) ? 'text-error' : ''}">${m.reopen ? 'Reopen → ' : ''}${m.stage}</a></li>`).join('')}
+    </ul></div>`;
+}
+
+/* ================= Variant A: Kanban board per job ================= */
+function variantA() {
+  const j = job(S.jobId);
+  const apps = S.apps.filter(a => a.jobId === j.id);
+  const card = a => `<div class="card card-sm bg-base-100 shadow-sm ${flash(a.id)}">
+      <div class="card-body p-3 gap-1">
+        <div class="flex items-start justify-between gap-2">
+          <div><div class="font-semibold text-sm">${a.name}</div><div class="text-xs opacity-60">Applied ${a.applied}</div></div>
+          ${moveMenu(a)}
+        </div>
+        <div><span class="badge badge-outline badge-xs">${a.source}</span> ${isFinal(a.stage) ? stageBadge(a.stage) : ''}</div>
+      </div></div>`;
+  const col = (s) => {
+    const list = apps.filter(a => a.stage === s);
+    return `<div class="bg-base-300/50 rounded-box p-2 w-56 shrink-0 flex flex-col gap-2">
+      <div class="flex justify-between items-center px-1"><span class="font-semibold text-sm">${s}</span><span class="badge badge-sm">${list.length}</span></div>
+      ${list.map(card).join('') || '<div class="text-xs opacity-40 text-center py-4">No one here</div>'}
+    </div>`;
+  };
+  const closed = apps.filter(a => isFinal(a.stage));
+  return `
+  <div class="navbar bg-base-100 shadow-sm px-6">
+    <div class="flex-1 gap-6 flex items-center"><span class="text-lg font-bold">Hiring ATS</span>
+      <ul class="menu menu-horizontal p-0 text-sm"><li><a>Jobs</a></li><li><a>Candidates</a></li><li><a class="menu-active">Pipeline</a></li></ul></div>
+    <span class="text-sm opacity-70">${S.role}</span>
+  </div>
+  <div class="px-6 py-5">
+    <div role="tablist" class="tabs tabs-box w-fit mb-4">
+      ${JOBS.map(x => `<a role="tab" data-job="${x.id}" class="tab ${x.id === j.id ? 'tab-active' : ''}">${x.title}</a>`).join('')}
+    </div>
+    <div class="flex items-center gap-3 mb-4">
+      <h1 class="text-2xl font-bold">${j.title}</h1>${jobStatusBadge(j)}
+      <span class="text-sm opacity-60">${j.dept} · ${j.location} · ${j.type}</span>
+    </div>
+    <div class="flex gap-3 overflow-x-auto pb-4">
+      ${IN_PROGRESS.map(col).join('')}
+      <div class="bg-base-300/30 rounded-box p-2 w-56 shrink-0 flex flex-col gap-2 border border-dashed border-base-300">
+        <div class="flex justify-between items-center px-1"><span class="font-semibold text-sm opacity-70">Closed out</span><span class="badge badge-sm">${closed.length}</span></div>
+        ${closed.map(card).join('') || '<div class="text-xs opacity-40 text-center py-4">No one here</div>'}
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ================= Variant B: Sidebar + table per job ================= */
+function variantB() {
+  const j = job(S.jobId);
+  const all = S.apps.filter(a => a.jobId === j.id);
+  const apps = S.stageFilter ? all.filter(a => a.stage === S.stageFilter) : all;
+  const counts = [...IN_PROGRESS, ...FINAL].map(s => [s, all.filter(a => a.stage === s).length]);
+  return `
+  <div class="flex min-h-screen">
+    <aside class="w-64 bg-base-100 border-r border-base-300 p-4 shrink-0">
+      <div class="text-lg font-bold mb-4 px-2">Hiring ATS</div>
+      <ul class="menu w-full p-0">
+        <li class="menu-title">Navigate</li>
+        <li><a>Candidates</a></li><li><a>Job openings</a></li>
+        <li class="menu-title mt-3">Pipelines</li>
+        ${JOBS.map(x => `<li><a data-job="${x.id}" class="${x.id === j.id ? 'menu-active' : ''}">
+          <span class="flex-1">${x.title}</span>
+          <span class="badge badge-sm">${S.apps.filter(a => a.jobId === x.id && !isFinal(a.stage)).length}</span></a></li>`).join('')}
+      </ul>
+      <div class="text-xs opacity-50 mt-6 px-2">Signed in as ${S.role}</div>
+    </aside>
+    <main class="flex-1 p-6 min-w-0">
+      <div class="breadcrumbs text-sm opacity-70"><ul><li>Pipelines</li><li>${j.title}</li></ul></div>
+      <div class="flex items-center gap-3 mb-4"><h1 class="text-2xl font-bold">${j.title}</h1>${jobStatusBadge(j)}</div>
+      <div class="flex flex-wrap gap-2 mb-4">
+        <button data-filter="" class="btn btn-sm ${!S.stageFilter ? 'btn-primary' : 'btn-ghost bg-base-100'}">All <span class="badge badge-sm">${all.length}</span></button>
+        ${counts.map(([s, n]) => `<button data-filter="${s}" class="btn btn-sm ${S.stageFilter === s ? 'btn-primary' : 'btn-ghost bg-base-100'} ${isFinal(s) ? 'opacity-70' : ''}">${s} <span class="badge badge-sm">${n}</span></button>`).join('')}
+      </div>
+      <div class="bg-base-100 rounded-box shadow-sm overflow-x-auto">
+        <table class="table">
+          <thead><tr><th>Candidate</th><th>Source</th><th>Applied</th><th>Stage</th><th class="text-right">Move to</th></tr></thead>
+          <tbody>
+          ${apps.map(a => {
+            const moves = allowedMoves(a.stage, S.role);
+            return `<tr class="${flash(a.id)}">
+              <td><div class="font-medium">${a.name}</div><div class="text-xs opacity-60">${a.email}</div></td>
+              <td class="text-sm">${a.source}</td><td class="text-sm">${a.applied}</td>
+              <td>${stageBadge(a.stage)}</td>
+              <td class="text-right">${moves.length ? `<select data-select="${a.id}" class="select select-sm w-44">
+                  <option disabled selected>${isFinal(a.stage) ? 'Reopen to…' : 'Move to…'}</option>
+                  ${moves.map(m => `<option value="${m.stage}">${m.stage}</option>`).join('')}
+                </select>` : '<span class="text-xs opacity-50">Final (Admin can reopen)</span>'}</td></tr>`;
+          }).join('') || `<tr><td colspan="5" class="text-center opacity-50 py-8">No applications in this stage.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>`;
+}
+
+/* ================= Variant C: All-jobs list + detail workspace ================= */
+function variantC() {
+  let list = S.apps.filter(a =>
+    (S.cJob === 'all' || a.jobId === +S.cJob) &&
+    (S.cStage === 'all' || (S.cStage === 'active' ? !isFinal(a.stage) : a.stage === S.cStage)) &&
+    (!S.cSearch || a.name.toLowerCase().includes(S.cSearch.toLowerCase())));
+  const sel = S.apps.find(a => a.id === S.selectedApp) || list[0];
+  const selJob = sel && job(sel.jobId);
+  const others = sel ? S.apps.filter(a => a.email === sel.email && a.id !== sel.id) : [];
+  const stepIdx = sel ? PIPELINE.indexOf(sel.stage) : -1;
+  const moves = sel ? allowedMoves(sel.stage, S.role) : [];
+  return `
+  <div class="bg-primary text-primary-content px-6 py-3 flex items-center justify-between">
+    <span class="font-bold">Hiring ATS · Applications workspace</span>
+    <span class="text-sm opacity-80">${S.role}</span>
+  </div>
+  <div class="p-6 grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-6">
+    <section class="bg-base-100 rounded-box shadow-sm flex flex-col">
+      <div class="p-3 flex flex-col gap-2 border-b border-base-300">
+        <input id="cSearch" class="input input-sm w-full" placeholder="Search candidates…" value="${esc(S.cSearch)}">
+        <div class="flex gap-2">
+          <select id="cJob" class="select select-sm flex-1">
+            <option value="all">All jobs</option>
+            ${JOBS.map(j => `<option value="${j.id}" ${S.cJob == j.id ? 'selected' : ''}>${j.title}</option>`).join('')}
+          </select>
+          <select id="cStage" class="select select-sm flex-1">
+            <option value="active" ${S.cStage === 'active' ? 'selected' : ''}>In progress</option>
+            <option value="all" ${S.cStage === 'all' ? 'selected' : ''}>All stages</option>
+            ${[...IN_PROGRESS, ...FINAL].map(s => `<option ${S.cStage === s ? 'selected' : ''}>${s}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <ul class="menu w-full p-2">
+        ${list.map(a => `<li><a data-select-app="${a.id}" class="${sel && a.id === sel.id ? 'menu-active' : ''} ${flash(a.id)} flex justify-between">
+          <span><span class="font-medium">${a.name}</span><br><span class="text-xs opacity-60">${job(a.jobId).title}</span></span>
+          ${stageBadge(a.stage)}</a></li>`).join('') || '<li class="opacity-50 p-4 text-sm">No matching applications.</li>'}
+      </ul>
+    </section>
+    <section>
+      ${sel ? `<div class="bg-base-100 rounded-box shadow-sm p-6 ${flash(sel.id)}">
+        <div class="flex justify-between items-start">
+          <div><h2 class="text-2xl font-bold">${sel.name}</h2>
+            <div class="text-sm opacity-70">${sel.email} · via ${sel.source}</div></div>
+          ${stageBadge(sel.stage)}
+        </div>
+        <div class="mt-4 text-sm flex items-center gap-2"><span class="font-semibold">${selJob.title}</span>${jobStatusBadge(selJob)}<span class="opacity-60">Applied ${sel.applied}</span></div>
+        <ul class="steps w-full mt-6 text-xs">
+          ${PIPELINE.map((s, i) => `<li class="step ${stepIdx >= i ? 'step-primary' : ''}">${s}</li>`).join('')}
+        </ul>
+        ${isFinal(sel.stage) && sel.stage !== 'Hired' ? `<div class="alert alert-soft mt-4 text-sm">This application ended as <b>${sel.stage}</b>.</div>` : ''}
+        <div class="divider text-xs">${isFinal(sel.stage) ? 'Reopen (Admin only)' : 'Move this application'}</div>
+        <div class="flex flex-wrap gap-2">
+          ${moves.length ? moves.map(m => `<button data-move="${sel.id}" data-stage="${m.stage}" class="btn btn-sm ${m.reopen ? 'btn-warning btn-outline' : ['Rejected','Withdrawn'].includes(m.stage) ? 'btn-error btn-outline' : 'btn-primary'}">${m.reopen ? 'Reopen → ' : ''}${m.stage}</button>`).join('')
+            : '<span class="text-sm opacity-60">This application is final. Only an Admin can reopen it.</span>'}
+        </div>
+        ${others.length ? `<div class="divider text-xs">Other applications by this candidate</div>
+          ${others.map(o => `<a data-select-app="${o.id}" class="link text-sm block">${job(o.jobId).title}: ${o.stage}</a>`).join('')}` : ''}
+      </div>` : '<div class="opacity-50">Select an application.</div>'}
+    </section>
+  </div>`;
+}
+
+/* ================= Shell + switcher wiring ================= */
+const VARIANTS = [
+  { key: 'A', name: 'Kanban board per job', render: variantA },
+  { key: 'B', name: 'Sidebar + table per job', render: variantB },
+  { key: 'C', name: 'All-jobs list + detail', render: variantC },
+];
+function render() {
+  const app = document.getElementById('app');
+  const hadFocus = document.activeElement && document.activeElement.id === 'cSearch';
+  app.innerHTML = VARIANTS[S.variant].render();
+  document.getElementById('vLabel').textContent = `${VARIANTS[S.variant].key} · ${VARIANTS[S.variant].name}`;
+  document.querySelectorAll('.roleBtn').forEach(b => {
+    const on = b.dataset.role === S.role;
+    b.style.background = on ? '#6366f1' : '#333'; b.style.color = '#fff';
+  });
+  if (hadFocus) { const i = document.getElementById('cSearch'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  setTimeout(() => { S.lastMoved = null; }, 0);
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-move],[data-job],[data-filter],[data-select-app]');
+  if (!t) return;
+  if (t.dataset.move) { document.activeElement.blur(); moveApp(+t.dataset.move, t.dataset.stage); }
+  else if (t.dataset.job) { S.jobId = +t.dataset.job; S.stageFilter = null; render(); }
+  else if (t.dataset.filter !== undefined) { S.stageFilter = t.dataset.filter || null; render(); }
+  else if (t.dataset.selectApp) { S.selectedApp = +t.dataset.selectApp; render(); }
+});
+document.addEventListener('change', e => {
+  if (e.target.dataset.select) moveApp(+e.target.dataset.select, e.target.value);
+  if (e.target.id === 'cJob') { S.cJob = e.target.value; render(); }
+  if (e.target.id === 'cStage') { S.cStage = e.target.value; render(); }
+});
+document.addEventListener('input', e => { if (e.target.id === 'cSearch') { S.cSearch = e.target.value; render(); } });
+function setVariant(i) { S.variant = (i + VARIANTS.length) % VARIANTS.length; localStorage.setItem('proto-variant', S.variant); render(); }
+document.getElementById('prevV').onclick = () => setVariant(S.variant - 1);
+document.getElementById('nextV').onclick = () => setVariant(S.variant + 1);
+document.addEventListener('keydown', e => {
+  if (['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+  if (e.key === 'ArrowLeft') setVariant(S.variant - 1);
+  if (e.key === 'ArrowRight') setVariant(S.variant + 1);
+});
+document.querySelectorAll('.roleBtn').forEach(b => b.onclick = () => { S.role = b.dataset.role; localStorage.setItem('proto-role', S.role); render(); });
+document.getElementById('resetData').onclick = () => { S.apps = freshApps(); S.lastMoved = null; render(); toast('Sample data reset.', 'alert-info'); };
+render();
+</script>
+</body>
+</html>
