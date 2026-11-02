@@ -30,6 +30,21 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 3: Admin-only skills (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 3`
+2. `yes` (the single TDD behavior: only Admins can use the skill pages)
+3. `i approve` (RED test for the Admin guard)
+4. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** A `Skill` model (migration `0002_skill`) with a unique constraint on `Lower("name")`, ordered by name without regard to case. New services `create_skill`, `rename_skill`, and `check_skill_name_is_free` raise `DuplicateSkillName`, and `SkillForm.clean_name` turns that into a field error such as `A skill named "Python" already exists.` A new `tracker/permissions.py` adds the reusable `@admin_required` decorator, which raises `PermissionDenied` (403) for non-Admins, and a styled `templates/403.html` shows the refusal. Admin-only DaisyUI pages list, create, and rename skills under `/skills/`, with success flash messages from a shared `tracker/_messages.html` include. The Admin-only Skills nav link now works. There are 45 passing tests: 13 new, of which 1 behavior (the Admin guard for both roles, GET and POST) was driven by TDD. CLAUDE.md was updated with the guard, the 403 page, and the messages include.
+- **Deviations:** The agent proposed only one TDD behavior instead of three. Its reason was that case-insensitive uniqueness and renaming follow the pattern `Candidate` already set up and tested. The user approved this unchanged. Without asking, the agent chose to keep skill names in the capitalization the Admin typed (collapsing extra whitespace) instead of lowercasing them as candidate emails are, because a list of lowercase skill names would read badly. It also allowed renaming a skill to change only its own capitalization. The CLAUDE.md edits that were already uncommitted at the start of the session were committed along with this phase.
+- **Sideways:**
+  - A combined shell command that used a nested Python heredoc to edit `services.py` failed: Python on Windows wrote the file with CRLF line endings and a non-UTF-8 byte, which broke `makemigrations` with a `UnicodeDecodeError`. The file was restored with `git checkout` and the change redone with the Edit tool and a plain `cat >>` append.
+  - One normal test first looked for an HTML-escaped apostrophe (`don&#x27;t`) on the 403 page. The template text isn't escaped, so the assertion was fixed to look for `don't`.
+
 ## 2026-11-02 — Implemented Phase 2: candidates create, view, edit, list, search (TDD)
 
 ### Prompts

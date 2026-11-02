@@ -36,3 +36,22 @@ class Candidate(models.Model):
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}"
+
+
+class Skill(models.Model):
+    """A shared, Admin-managed skill name, unique regardless of capitalization."""
+
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        ordering = [Lower("name")]
+        constraints = [
+            models.UniqueConstraint(
+                Lower("name"),
+                name="unique_skill_name_ci",
+                violation_error_message="A skill with this name already exists.",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name

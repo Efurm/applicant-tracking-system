@@ -1,0 +1,9 @@
+{% if messages %}
+<div class="flex flex-col gap-2 mb-4">
+  {% for message in messages %}
+  <div role="alert" class="alert {% if message.tags == 'success' %}alert-success{% elif message.tags == 'error' %}alert-error{% else %}alert-info{% endif %} text-sm">
+    <span>{{ message }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

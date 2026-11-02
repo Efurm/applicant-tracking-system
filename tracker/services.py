@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 
-from .models import Candidate
+from .models import Candidate, Skill
 
 CANDIDATE_FIELDS = (
     "first_name",
@@ -74,3 +74,41 @@ def search_candidates(query=""):
             | Q(email__icontains=query)
         )
     return candidates
+
+
+class DuplicateSkillName(ValidationError):
+    """Another skill already uses this name (ignoring capitalization)."""
+
+    def __init__(self, existing):
+        self.existing = existing
+        super().__init__(f'A skill named "{existing.name}" already exists.', code="duplicate_skill")
+
+
+def normalize_skill_name(name):
+    """Trim and collapse whitespace, but keep the capitalization the Admin typed."""
+    return " ".join(name.split())
+
+
+def check_skill_name_is_free(name, skill=None):
+    """Raise DuplicateSkillName if a skill other than ``skill`` uses ``name``."""
+    others = Skill.objects.filter(name__iexact=name)
+    if skill is not None and skill.pk is not None:
+        others = others.exclude(pk=skill.pk)
+    existing = others.first()
+    if existing is not None:
+        raise DuplicateSkillName(existing)
+
+
+@transaction.atomic
+def create_skill(name):
+    name = normalize_skill_name(name)
+    check_skill_name_is_free(name)
+    return Skill.objects.create(name=name)
+
+
+@transaction.atomic
+def rename_skill(skill, name):
+    skill.name = normalize_skill_name(name)
+    check_skill_name_is_free(skill.name, skill)
+    skill.save()
+    return skill

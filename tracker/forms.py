@@ -2,7 +2,7 @@ from django import forms
 from django.utils.html import format_html
 
 from . import services
-from .models import Candidate
+from .models import Candidate, Skill
 
 
 class CandidateForm(forms.ModelForm):
@@ -25,3 +25,17 @@ class CandidateForm(forms.ModelForm):
                 code=error.code,
             ) from error
         return email
+
+
+class SkillForm(forms.ModelForm):
+    class Meta:
+        model = Skill
+        fields = ["name"]
+
+    def clean_name(self):
+        name = services.normalize_skill_name(self.cleaned_data["name"])
+        try:
+            services.check_skill_name_is_free(name, self.instance)
+        except services.DuplicateSkillName as error:
+            raise forms.ValidationError(error.message, code=error.code) from error
+        return name

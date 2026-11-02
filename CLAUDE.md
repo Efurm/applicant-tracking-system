@@ -34,14 +34,29 @@ Run everything through `uv run` (uv manages Python 3.13 and the `.venv`).
 The project package is `config` (settings, root URLs).
 
 - **`accounts`** owns only the custom `User` model (`AUTH_USER_MODEL = "accounts.User"`), with a `role` field (`Role.ADMIN` or `Role.STAFF`, default Staff) and an `is_admin` property. Saving a user syncs `is_staff` and `is_superuser` to the role, so Admins can manage users at `/admin/` and Staff cannot. `createsuperuser` creates an Admin. Its Django admin registration exposes role and `is_active` and blocks deleting users; deactivate them instead. Tests are in `accounts/tests/`.
-- **`tracker`** owns all hiring functionality: models, the services module, views, forms, templates, and URLs (namespace `tracker:`, mounted at `/`). So far it holds the placeholder home view (`tracker:home`) and the `Candidate` model with list (searchable via `?q=`), create, detail, and edit pages under `/candidates/`. Candidate email uniqueness is case-insensitive: a DB constraint on `Lower("email")`, plus `services.check_email_is_free`, which the form uses to link to the existing record. Tests are in `tracker/tests/`.
+- **`tracker`** owns all hiring functionality (namespace `tracker:`, mounted at `/`). Done so far: home (`tracker:home`) `Candidate` list (`?q=` search), create, detail, and edit under `/candidates/`; and Admin-only `Skill` list, create, and rename under `/skills/`. Tests are in `tracker/tests/test_<area>.py`.
 
 Shared pieces outside the apps:
 - `templates/base.html` is the HTML shell that loads Tailwind.
 - `templates/app_base.html` is the logged-in nav shell. App pages extend it and fill `{% block content %}`, and Admin-only controls are wrapped in `{% if user.is_admin %}`.
 - `templates/registration/` holds the login and logged-out pages, which use Django's built-in auth views at `/accounts/`.
 - `LoginRequiredMiddleware` requires login on every page by default.
+- `templates/403.html` is the styled page shown when a view raises `PermissionDenied`.
 - `conftest.py` provides the `admin_user`, `staff_user`, `admin_client`, and `staff_client` fixtures and `TEST_PASSWORD`.
+
+## Conventions and gotchas
+
+- `tracker/services.py` holds every rule. Services raise `ValidationError` subclasses that carry context (e.g. `DuplicateCandidateEmail.existing`).
+- `ModelForm.is_valid()` checks model constraints before the view can call a service. So a uniqueness rule that needs a friendly error goes in the form's `clean_<field>`, which calls the service check (see `CandidateForm.clean_email`).
+- Bind forms with `_form_data(request)` in `tracker/views.py`, not `request.POST or None`, which leaves an empty POST unbound with no errors.
+- Admin-only views use `@admin_required` from `tracker/permissions.py` (403 for Staff). Hide their controls in templates with `{% if user.is_admin %}` too.
+- Case-insensitive uniqueness uses a `UniqueConstraint(Lower(...))`. Candidate emails are lowercased before saving; skill names keep the Admin's capitalization (whitespace is collapsed).
+- URL names are `<model>_<action>` (e.g. `candidate_edit`). Templates go in `tracker/templates/tracker/<area>/{list,detail,form}.html`.
+- Flash messages render via `{% include "tracker/_messages.html" %}`.
+- Nav links for pages that don't exist yet point to `#`. Wire them up when the page lands.
+- Ruff's `DJ` rules enforce Django model member order: `Meta`, `__str__`, `get_absolute_url`, then custom methods.
+- On Windows, bare `python` isn't on PATH, so always use `uv run python`.
+- Workflow: one plan phase per `/implement` session (TDD for up to 3 behaviors), then update `PROMPTS.md`, commit, and push.
 
 ## References
 
