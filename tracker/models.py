@@ -1,6 +1,7 @@
 from django.db import models
 from django.db.models.functions import Lower
 from django.urls import reverse
+from django.utils import timezone
 
 
 class Candidate(models.Model):
@@ -96,3 +97,47 @@ class JobOpening(models.Model):
     @property
     def is_open(self):
         return self.status == JobStatus.OPEN
+
+
+class ApplicationSource(models.TextChoices):
+    COMPANY_WEBSITE = "company_website", "Company Website"
+    JOB_BOARD = "job_board", "Job Board"
+    REFERRAL = "referral", "Referral"
+    OTHER = "other", "Other"
+
+
+class Stage(models.TextChoices):
+    APPLIED = "applied", "Applied"
+    SCREENING = "screening", "Screening"
+    INTERVIEW = "interview", "Interview"
+    FINAL_REVIEW = "final_review", "Final Review"
+    OFFER = "offer", "Offer"
+    HIRED = "hired", "Hired"
+    REJECTED = "rejected", "Rejected"
+    WITHDRAWN = "withdrawn", "Withdrawn"
+
+
+class Application(models.Model):
+    """One candidate's application to one job opening, and where it stands."""
+
+    candidate = models.ForeignKey(Candidate, on_delete=models.PROTECT, related_name="applications")
+    job = models.ForeignKey(JobOpening, on_delete=models.PROTECT, related_name="applications")
+    source = models.CharField(max_length=20, choices=ApplicationSource)
+    source_details = models.CharField(max_length=200, blank=True)
+    stage = models.CharField(max_length=20, choices=Stage, default=Stage.APPLIED)
+    applied_on = models.DateField(default=timezone.localdate)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-applied_on", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["candidate", "job"],
+                name="unique_application_per_candidate_job",
+                violation_error_message="This candidate has already applied to this job.",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.candidate} → {self.job}"

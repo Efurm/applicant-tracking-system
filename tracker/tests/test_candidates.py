@@ -57,13 +57,6 @@ def test_candidate_list_search_matches_first_name_last_name_or_email_ignoring_ca
     assert {c.full_name for c in response.context["candidates"]} == expected
 
 
-@pytest.fixture
-def candidate(db):
-    return Candidate.objects.create(
-        first_name="Jo", last_name="Park", email="jo.park@example.com", phone="555-0100"
-    )
-
-
 @pytest.mark.parametrize(
     "url_name",
     ["candidate_list", "candidate_create", "candidate_detail", "candidate_edit"],

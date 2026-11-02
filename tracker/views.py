@@ -3,7 +3,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from . import services
-from .forms import CandidateForm, JobOpeningForm, SkillForm
+from .forms import ApplicationForm, CandidateForm, JobOpeningForm, SkillForm
 from .models import Candidate, JobOpening, JobStatus, Skill
 from .permissions import admin_required
 
@@ -27,7 +27,12 @@ def candidate_list(request):
 
 def candidate_detail(request, pk):
     candidate = get_object_or_404(Candidate, pk=pk)
-    return render(request, "tracker/candidates/detail.html", {"candidate": candidate})
+    applications = candidate.applications.select_related("job")
+    return render(
+        request,
+        "tracker/candidates/detail.html",
+        {"candidate": candidate, "applications": applications},
+    )
 
 
 def candidate_create(request):
@@ -45,6 +50,20 @@ def candidate_edit(request, pk):
         services.update_candidate(candidate, **form.cleaned_data)
         return redirect(candidate)
     return render(request, "tracker/candidates/form.html", {"form": form, "candidate": candidate})
+
+
+def candidate_apply(request, pk):
+    candidate = get_object_or_404(Candidate, pk=pk)
+    form = ApplicationForm(_form_data(request), candidate=candidate)
+    if request.method == "POST" and form.is_valid():
+        try:
+            application = services.create_application(candidate, **form.cleaned_data)
+        except (services.JobClosedToApplicants, services.DuplicateApplication) as error:
+            form.add_error(None, error)
+        else:
+            messages.success(request, f'Recorded application to "{application.job.title}".')
+            return redirect(candidate)
+    return render(request, "tracker/candidates/apply.html", {"form": form, "candidate": candidate})
 
 
 @admin_required

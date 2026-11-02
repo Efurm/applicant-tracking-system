@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 
-from .models import Candidate, JobOpening, JobStatus, Skill
+from .models import Application, Candidate, JobOpening, JobStatus, Skill
 
 CANDIDATE_FIELDS = (
     "first_name",
@@ -180,3 +180,49 @@ def reopen_job(job):
     job.status = JobStatus.OPEN
     job.save(update_fields=["status", "updated_at"])
     return job
+
+
+APPLICATION_FIELDS = ("job", "source", "source_details")
+
+
+class JobClosedToApplicants(ValidationError):
+    """The job opening is Closed, so it takes no new applications."""
+
+    def __init__(self, job):
+        self.job = job
+        super().__init__(f'"{job.title}" is closed to new applicants.', code="job_closed")
+
+
+class DuplicateApplication(ValidationError):
+    """The candidate already has an application for this job opening."""
+
+    def __init__(self, existing):
+        self.existing = existing
+        super().__init__(
+            f'{existing.candidate.full_name} has already applied to "{existing.job.title}".',
+            code="duplicate_application",
+        )
+
+
+def jobs_open_to(candidate):
+    """Open job openings that ``candidate`` hasn't applied to yet."""
+    return JobOpening.objects.filter(status=JobStatus.OPEN).exclude(
+        applications__candidate=candidate
+    )
+
+
+@transaction.atomic
+def create_application(candidate, job, source, source_details=""):
+    """Record ``candidate``'s application to ``job``, starting at Applied.
+
+    Refused with JobClosedToApplicants if the job is Closed, and with
+    DuplicateApplication if the candidate has already applied to it.
+    """
+    if not job.is_open:
+        raise JobClosedToApplicants(job)
+    existing = candidate.applications.filter(job=job).first()
+    if existing is not None:
+        raise DuplicateApplication(existing)
+    return Application.objects.create(
+        candidate=candidate, job=job, source=source, source_details=source_details
+    )

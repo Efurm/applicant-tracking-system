@@ -30,6 +30,23 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 6: recording applications (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 6`
+2. `yes` (the three TDD behaviors: `create_application` refuses a closed job and a duplicate, the apply form offers only open not-yet-applied jobs, Staff apply from the candidate page and see the application listed)
+3. `i approve` (RED test for behavior 1)
+4. `yes` (move on to behavior 2)
+5. `i approve` (RED test for behavior 2)
+6. `yes` (move on to behavior 3)
+7. `i approve` (RED test for behavior 3)
+8. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** A new `Application` model (migration `0004`). It has `candidate` and `job` foreign keys, both `PROTECT`, plus a unique (candidate, job) constraint, `ApplicationSource` and `Stage` choices, `source_details`, a `stage` that defaults to Applied, and an `applied_on` date that defaults to today. New services: `jobs_open_to(candidate)`, and `create_application`, which raises `JobClosedToApplicants` or `DuplicateApplication`. There is a new `ApplicationForm` and a `candidate_apply` view at `/candidates/<pk>/apply/` for both roles. If the service refuses, the view shows the refusal as a form error. The candidate page now has an "Apply to a job" button, a table of applications (job with a Closed badge where it applies, stage, source and details, applied date), and flash messages. The `candidate`, `open_job`, and `closed_job` fixtures moved to `conftest.py`. A `make_application(stage=...)` factory fixture lives in `test_applications.py`. There are 86 passing tests, 12 of them new; 3 behaviors were driven by TDD. CLAUDE.md's status, inventory, and gotchas were updated.
+- **Deviations:** None from the recommendations; all three behaviors and RED tests were approved unchanged. The agent pointed out that test 3's `"Applied"` check is a loose text match and offered a tighter marker; the user approved it as written. The agent made the job foreign key `PROTECT` too, which the PRD doesn't require. Following the CLAUDE.md fixture convention, `make_application` stays in its test module for now rather than going in `conftest.py`, even though the plan calls for a shared fixture. The CLAUDE.md edits that were already uncommitted at the start of the session were committed along with this phase.
+- **Sideways:** The first attempt to move the fixtures chained two heredocs with `||`. It sent the wrong input to Python and added only the import line to `conftest.py`. The agent noticed this in the diff stat and redid the move with a temporary script. The first run of test 1 failed with `AttributeError` (the exception classes didn't exist yet), not on an assertion. The agent added the classes without any checks to get a proper RED. Moving the fixtures left an unused `pytest` import in `test_jobs.py`, which Ruff caught and fixed.
+
 ## 2026-11-02 — Implemented Phase 5: closing and reopening jobs (TDD)
 
 ### Prompts

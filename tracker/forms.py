@@ -2,7 +2,7 @@ from django import forms
 from django.utils.html import format_html
 
 from . import services
-from .models import Candidate, JobOpening, Skill
+from .models import Application, Candidate, JobOpening, Skill
 
 
 class CandidateForm(forms.ModelForm):
@@ -49,3 +49,16 @@ class JobOpeningForm(forms.ModelForm):
             "description": forms.Textarea(attrs={"rows": 6}),
             "skills": forms.CheckboxSelectMultiple,
         }
+
+
+class ApplicationForm(forms.ModelForm):
+    """Record an application for one candidate; job choices depend on that candidate."""
+
+    class Meta:
+        model = Application
+        fields = services.APPLICATION_FIELDS
+
+    def __init__(self, *args, candidate, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.candidate = candidate
+        self.fields["job"].queryset = services.jobs_open_to(candidate)

@@ -1,26 +1,8 @@
-import pytest
 from django.urls import reverse
 from django.utils.html import escape
 
 from tracker import services
 from tracker.models import EmploymentType, JobOpening, JobStatus, Skill
-
-
-@pytest.fixture
-def open_job(db):
-    return JobOpening.objects.create(
-        title="Backend Developer", department="Engineering", description="Build APIs."
-    )
-
-
-@pytest.fixture
-def closed_job(db):
-    return JobOpening.objects.create(
-        title="Data Analyst",
-        department="Finance",
-        description="Analyze data.",
-        status=JobStatus.CLOSED,
-    )
 
 
 def test_job_list_filters_by_status_from_the_url(staff_client, open_job, closed_job):
