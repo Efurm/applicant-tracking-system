@@ -41,6 +41,27 @@
   <div role="status" class="alert alert-soft mt-4 text-sm">This application ended as <strong>{{ application.get_stage_display }}</strong>.</div>
   {% endif %}
 
+  {% if move_error %}
+  <div role="alert" class="alert alert-error mt-4 text-sm" data-move-error>{{ move_error }}</div>
+  {% endif %}
+
+  {% if allowed_moves %}
+  {% url 'tracker:application_move' application.pk as move_url %}
+  <form method="post"
+        action="{{ move_url }}{% if filter_query %}?{{ filter_query }}{% endif %}"
+        hx-post="{{ move_url }}{% if filter_query %}?{{ filter_query }}{% endif %}"
+        hx-target="#application-panel" hx-swap="outerHTML"
+        class="mt-4" data-move-form>
+    {% csrf_token %}
+    <div class="text-sm font-semibold mb-2">Move to</div>
+    <div class="flex flex-wrap gap-2">
+      {% for next_stage in allowed_moves %}
+      <button type="submit" name="stage" value="{{ next_stage.value }}" class="btn btn-sm btn-outline btn-primary" data-move-to="{{ next_stage.value }}">{{ next_stage.label }}</button>
+      {% endfor %}
+    </div>
+  </form>
+  {% endif %}
+
   {% if other_applications %}
   <div class="divider text-xs">Other applications by this candidate</div>
   <ul class="text-sm space-y-1">

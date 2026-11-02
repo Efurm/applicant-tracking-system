@@ -2,6 +2,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from . import services
@@ -163,43 +164,95 @@ def job_reopen(request, pk):
     return redirect(job)
 
 
-def application_workspace(request):
+def _workspace_filters(request):
+    """The workspace filters from the query string, cleaned, plus them as a query string.
+
+    Unknown jobs and stages fall back to the defaults (all jobs, in-progress).
+    The query string lets links and the move form keep the current filters.
+    """
     job_id = request.GET.get("job", "")
     job = JobOpening.objects.filter(pk=job_id).first() if job_id.isdigit() else None
     stage = request.GET.get("stage", "")
     if stage != services.ALL_STAGES and stage not in Stage.values:
         stage = ""
     query = request.GET.get("q", "")
+    filters = {"job": job.pk if job else "", "stage": stage, "q": query}
+    filter_query = urlencode({name: value for name, value in filters.items() if value})
+    return job, stage, query, filter_query
+
+
+def _panel_context(request, application, filter_query, move_error=None):
+    """What the detail panel (and its list row) need to render ``application``."""
+    return {
+        "application": application,
+        "selected": application,
+        "filter_query": filter_query,
+        "other_applications": application.candidate.applications.exclude(
+            pk=application.pk
+        ).select_related("job"),
+        "allowed_moves": services.allowed_next_stages(application.stage, request.user),
+        "move_error": move_error,
+    }
+
+
+def application_workspace(request):
+    job, stage, query, filter_query = _workspace_filters(request)
     applications = services.filter_applications(job=job, stage=stage, query=query)
 
     selected_id = request.GET.get("selected", "")
     selected = None
-    other_applications = []
     if selected_id.isdigit():
         selected = (
             Application.objects.select_related("candidate", "job").filter(pk=selected_id).first()
         )
+    context = {
+        "applications": applications,
+        "job": job,
+        "stage": stage,
+        "query": query,
+        "filter_query": filter_query,
+        "selected": selected,
+        "jobs": JobOpening.objects.all(),
+        "stage_choices": Stage.choices,
+        "all_stages": services.ALL_STAGES,
+    }
     if selected is not None:
-        other_applications = selected.candidate.applications.exclude(pk=selected.pk).select_related(
-            "job"
-        )
+        context |= _panel_context(request, selected, filter_query)
+    return render(request, "tracker/applications/workspace.html", context)
 
-    # The current filters as a query string, so links to another application keep them.
-    filters = {"job": job.pk if job else "", "stage": stage, "q": query}
-    filter_query = urlencode({name: value for name, value in filters.items() if value})
+
+@require_POST
+def application_move(request, pk):
+    """Move an application to the posted stage.
+
+    An HTMX request gets the re-rendered detail panel plus the application's
+    list row as an out-of-band swap; a refused move renders its message in the
+    panel and changes nothing. Without HTMX, the result is flashed and the
+    browser goes back to the workspace.
+    """
+    application = get_object_or_404(Application.objects.select_related("candidate", "job"), pk=pk)
+    _, _, _, filter_query = _workspace_filters(request)
+    to_stage = request.POST.get("stage", "")
+    move_error = None
+    try:
+        services.move_application(application, to_stage, request.user)
+    except services.InvalidStageMove as error:
+        move_error = error.message
+        application.refresh_from_db()
+
+    if not request.headers.get("HX-Request"):
+        if move_error:
+            messages.error(request, move_error)
+        else:
+            messages.success(
+                request,
+                f"Moved {application.candidate.full_name} to {application.get_stage_display()}.",
+            )
+        query = f"{filter_query}&" if filter_query else ""
+        return redirect(f"{reverse('tracker:application_workspace')}?{query}selected={pk}")
+
     return render(
         request,
-        "tracker/applications/workspace.html",
-        {
-            "applications": applications,
-            "job": job,
-            "stage": stage,
-            "query": query,
-            "filter_query": filter_query,
-            "selected": selected,
-            "other_applications": other_applications,
-            "jobs": JobOpening.objects.all(),
-            "stage_choices": Stage.choices,
-            "all_stages": services.ALL_STAGES,
-        },
+        "tracker/applications/_move.html",
+        _panel_context(request, application, filter_query, move_error),
     )

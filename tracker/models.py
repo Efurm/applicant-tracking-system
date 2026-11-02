@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.db.models.functions import Lower
 from django.urls import reverse
@@ -178,3 +179,25 @@ class Application(models.Model):
                 state = "done"
             steps.append({"stage": stage, "label": stage.label, "state": state})
         return steps
+
+
+class StageChange(models.Model):
+    """One move of an application from one stage to another, and who made it."""
+
+    application = models.ForeignKey(
+        Application, on_delete=models.CASCADE, related_name="stage_changes"
+    )
+    from_stage = models.CharField(max_length=20, choices=Stage)
+    to_stage = models.CharField(max_length=20, choices=Stage)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="stage_changes"
+    )
+    changed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["changed_at", "pk"]
+
+    def __str__(self):
+        return (
+            f"{self.application}: {self.get_from_stage_display()} → {self.get_to_stage_display()}"
+        )

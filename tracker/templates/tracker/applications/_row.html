@@ -1,4 +1,4 @@
-<li id="application-row-{{ application.pk }}" data-application-row="{{ application.pk }}">
+<li id="application-row-{{ application.pk }}" data-application-row="{{ application.pk }}"{% if oob %} hx-swap-oob="true"{% endif %}>
   <a href="{% url 'tracker:application_workspace' %}?{% if filter_query %}{{ filter_query }}&{% endif %}selected={{ application.pk }}"
      class="flex justify-between gap-2{% if selected and selected.pk == application.pk %} menu-active{% endif %}"
      {% if selected and selected.pk == application.pk %}aria-current="true"{% endif %}>

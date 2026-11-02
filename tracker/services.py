@@ -11,12 +11,14 @@ from django.db.models import Q
 
 from .models import (
     IN_PROGRESS_STAGES,
+    PIPELINE_STAGES,
     Application,
     Candidate,
     JobOpening,
     JobStatus,
     Skill,
     Stage,
+    StageChange,
 )
 
 CANDIDATE_FIELDS = (
@@ -259,3 +261,51 @@ def filter_applications(job=None, stage="", query=""):
             Q(candidate__first_name__icontains=word) | Q(candidate__last_name__icontains=word)
         )
     return applications
+
+
+class InvalidStageMove(ValidationError):
+    """The application can't move from its current stage to the requested one."""
+
+    def __init__(self, application, to_stage):
+        self.application = application
+        self.to_stage = to_stage
+        super().__init__(
+            f"Can't move this application from {application.get_stage_display()} "
+            f"to {Stage(to_stage).label if to_stage in Stage.values else to_stage}.",
+            code="invalid_stage_move",
+        )
+
+
+def allowed_next_stages(stage, user):
+    """The stages an application at ``stage`` may move to when ``user`` moves it.
+
+    This one rule drives both the move buttons and the move service's
+    validation. For now only forward moves exist: from an in-progress stage,
+    any later pipeline stage (skipping allowed). ``user`` is unused until
+    Admin reopens arrive.
+    """
+    if stage not in IN_PROGRESS_STAGES:
+        return ()
+    return PIPELINE_STAGES[PIPELINE_STAGES.index(stage) + 1 :]
+
+
+@transaction.atomic
+def move_application(application, to_stage, user):
+    """Move ``application`` to ``to_stage`` and record a StageChange by ``user``.
+
+    Every stage change goes through here. The move must be one of
+    ``allowed_next_stages`` for the application's current stage (read fresh
+    from the database), otherwise InvalidStageMove is raised and nothing
+    changes. Moves work the same on closed jobs.
+    """
+    current = Application.objects.select_for_update().values_list("stage", flat=True)
+    application.stage = current.get(pk=application.pk)
+    if to_stage not in allowed_next_stages(application.stage, user):
+        raise InvalidStageMove(application, to_stage)
+    from_stage = application.stage
+    application.stage = to_stage
+    application.save(update_fields=["stage", "updated_at"])
+    StageChange.objects.create(
+        application=application, from_stage=from_stage, to_stage=to_stage, changed_by=user
+    )
+    return application

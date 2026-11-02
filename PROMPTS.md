@@ -30,6 +30,44 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 8: HTMX forward stage moves (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 8`
+2. `yes` (the three TDD behaviors: `allowed_next_stages` offers only later pipeline stages, `move_application` updates the stage and writes a `StageChange` or refuses with no change, and the HTMX endpoint returns the panel plus an out-of-band row or refuses in place)
+3. `yes` (RED test for behavior 1)
+4. `yes` (move on to behavior 2)
+5. `yes` (RED tests for behavior 2)
+6. `yes` (move on to behavior 3)
+7. `yes` (RED tests for behavior 3)
+8. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** Applications can now move forward through the pipeline from the workspace's detail panel, without a full page reload.
+  - **Model:** a new `StageChange` (migration `0005`) records the application, `from_stage`, `to_stage`, `changed_by` (`PROTECT`), and `changed_at`, ordered by time.
+  - **Services:**
+    - `allowed_next_stages(stage, user)` returns the later `PIPELINE_STAGES`, so skipping ahead is allowed. It drives both the panel's buttons and validation.
+    - `move_application(application, to_stage, user)` re-reads the stage with `select_for_update`. It either raises `InvalidStageMove` or saves the stage and writes a `StageChange`, in one transaction. Moves on closed jobs work the same.
+  - **Endpoint:** POST `application_move` at `/applications/<pk>/move/`, for both roles.
+    - With HTMX, it returns `_move.html`: the panel plus the list row with `hx-swap-oob="true"`. Refusals show in `data-move-error` at status 200.
+    - Without HTMX, it flashes a message and redirects back to the workspace.
+    - The move form's URL carries the current filters.
+  - **Other changes:**
+    - HTMX 2.0.4 is vendored at `assets/js/htmx.min.js` and loaded in `base.html`.
+    - `_workspace_filters` and `_panel_context` view helpers are shared by the workspace and the move endpoint.
+    - The HTML test helper moved to `tracker/tests/html.py` (as `marked`).
+    - `make_application` now reaches pipeline stages through `move_application`. Rejected and Withdrawn are still set directly until Phase 9.
+    - CLAUDE.md's status and inventory were updated.
+  - **Tests:** 118 pass, 21 of them new in `test_moves.py`. 3 behaviors were driven by TDD.
+- **Deviations:** None. All three behaviors and their RED tests were approved unchanged. The agent stated these design choices before approval:
+  - The `note` field is left out until Phase 10.
+  - Refusals return 200 so HTMX swaps them in.
+  - The move form posts a `stage` field.
+- **Sideways:**
+  - Before the behavior 2 RED run, the agent changed the refusal test to compare `StageChange` rows before and after the move instead of asserting the table is empty. Otherwise the test would have broken once `make_application` started writing `StageChange` rows.
+  - A scaffolding command for behavior 3 hung because a stray `cat` waited on input. The agent stopped it, confirmed nothing had changed, and re-ran the edit as a script saved in the scratchpad.
+  - One command chained two heredocs, which CLAUDE.md warns against. The agent checked the resulting test file and found it intact.
+
 ## 2026-11-02 — Implemented Phase 7: read-only applications workspace (TDD)
 
 ### Prompts
