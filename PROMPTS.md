@@ -30,6 +30,31 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 14: the seed_demo command and README (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 14`
+2. `yes, go ahead` (the re-run policy and the three TDD behaviors: a fresh run follows the rules, running twice doesn't duplicate, refusal when non-demo data exists)
+3. `yes, implement it to pass` (behavior 1)
+4. `yes move on to behavior 2`
+5. `yes implement it to pass` (behavior 2, accepting an IntegrityError crash as its RED)
+6. `yes move on to behavior 3`
+7. `yes implement it to pass` (behavior 3)
+8. `yes go ahead with the rest of the phase`
+
+### Summary
+- **Outcome:** `uv run python manage.py seed_demo` loads a demo through the services: logins `demo-admin` and `demo-staff`, 15 skills, 5 jobs (Customer Support Intern closed, with applications still in progress), 20 candidates (Quinn Foster archived), and 30 applications covering all eight stages, with 49 stage changes that include notes and two Admin reopens.
+  - **Command:** data tables (`USERS`, `SKILLS`, `JOBS`, `CANDIDATES`, `APPLICATIONS` with `(stage, mover, note)` moves) are played through `create_skill`, `create_job`, `create_candidate`, `create_application`, and `move_application` in one transaction, then `close_job` and `archive_candidate` last, since the services refuse those earlier. Users are the only rows made without a service (`create_user`).
+  - **Re-run policy:** a mix of the PRD's two options. If any candidate, job, or skill isn't one of the command's own (`@demo.example.com` emails, the `JOBS` titles, the `SKILLS` names), it raises `CommandError` and changes nothing. Otherwise it deletes the old demo data in `PROTECT` order (applications with their stage changes, candidates, jobs, skills, demo users) and loads it fresh. Real users are never touched.
+  - **Docs:** the README has a "Demo data (local development only)" section with the command, the credentials table, a warning, and the re-run policy. CLAUDE.md marks all 14 phases done.
+  - **Tests:** 207 pass (up from 202): a fresh run's counts, roles, logins, all eight stages, a valid stage-history chain for every application (each step allowed for its mover), an Admin reopen, and a note; two runs giving identical counts while keeping a real user; and a refusal, with nothing changed, for a non-demo candidate, job, or skill. The command was also run twice on the empty dev database (backed up first), and its refusal was checked by hand on a scratch copy.
+- **Deviations:** None. The user approved the proposed re-run policy and each TDD step as proposed.
+- **Sideways:**
+  - Behavior 2's first failure was an `IntegrityError` (duplicate `demo-admin`), not an assertion. The crash was the missing behavior itself, and making it fail on an assertion would have meant writing the reset first or weakening the test. The agent said so, and the user accepted it as RED.
+  - Known limits: every application is dated the day the command runs (the services take no dates), and a hand-made job with exactly a demo title would be treated as demo data.
+
+---
+
 ## 2026-11-02 — Implemented Phase 13: job stage counts (TDD)
 
 ### Prompts
