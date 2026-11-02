@@ -41,6 +41,9 @@ Each entry has this shape:
 6. `yes move on to behavior 3`
 7. `yes implement it to pass` (behavior 3)
 8. `yes go ahead with the rest of the phase`
+9. `run the dev server so i can check it`
+10. `im finished stop the server`
+11. `append the session log to PROMPTS.md`
 
 ### Summary
 - **Outcome:** `uv run python manage.py seed_demo` loads a demo through the services: logins `demo-admin` and `demo-staff`, 15 skills, 5 jobs (Customer Support Intern closed, with applications still in progress), 20 candidates (Quinn Foster archived), and 30 applications covering all eight stages, with 49 stage changes that include notes and two Admin reopens.
@@ -48,10 +51,12 @@ Each entry has this shape:
   - **Re-run policy:** a mix of the PRD's two options. If any candidate, job, or skill isn't one of the command's own (`@demo.example.com` emails, the `JOBS` titles, the `SKILLS` names), it raises `CommandError` and changes nothing. Otherwise it deletes the old demo data in `PROTECT` order (applications with their stage changes, candidates, jobs, skills, demo users) and loads it fresh. Real users are never touched.
   - **Docs:** the README has a "Demo data (local development only)" section with the command, the credentials table, a warning, and the re-run policy. CLAUDE.md marks all 14 phases done.
   - **Tests:** 207 pass (up from 202): a fresh run's counts, roles, logins, all eight stages, a valid stage-history chain for every application (each step allowed for its mover), an Admin reopen, and a note; two runs giving identical counts while keeping a real user; and a refusal, with nothing changed, for a non-demo candidate, job, or skill. The command was also run twice on the empty dev database (backed up first), and its refusal was checked by hand on a scratch copy.
+  - **Manual check:** after the commit, the agent started `tailwind runserver` in the background so the user could check the demo in the browser, then stopped it when they were finished. The demo data stays in the dev database.
 - **Deviations:** None. The user approved the proposed re-run policy and each TDD step as proposed.
 - **Sideways:**
   - Behavior 2's first failure was an `IntegrityError` (duplicate `demo-admin`), not an assertion. The crash was the missing behavior itself, and making it fail on an assertion would have meant writing the reset first or weakening the test. The agent said so, and the user accepted it as RED.
   - Known limits: every application is dated the day the command runs (the services take no dates), and a hand-made job with exactly a demo title would be treated as demo data.
+  - The agent wrote this entry unprompted during the `/implement` finishing step (the skill says to update PROMPTS.md), which breaks the file's rule that entries are added only by the log prompt. When the user then gave that prompt, the agent completed this entry with the later prompts rather than adding a duplicate. The first version was committed and pushed with Phase 14 (`3a65ffb`); this completion came afterwards.
 
 ---
 
