@@ -30,6 +30,25 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 4: job openings with skills (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 4`
+2. `yes` (the three TDD behaviors: skill delete refused while a job uses it, job list status filter, Admin creates a job with several shared skills)
+3. `i approve` (RED test for behavior 1)
+4. `yes` (move on to behavior 2)
+5. `i approve` (RED test for behavior 2)
+6. `yes` (move on to behavior 3)
+7. `i approve` (RED test for behavior 3)
+8. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** A `JobOpening` model (migration `0003_jobopening`) with title, department, optional location, `EmploymentType` (Full-time/Part-time/Contract/Internship), description, `JobStatus` (Open/Closed, default Open), a many-to-many `skills` field (`Skill.job_openings`), and timestamps, ordered by title. New services: `create_job` and `update_job` save the job and its skills in one transaction; `filter_jobs` narrows by a valid status and otherwise returns all jobs; `delete_skill` raises `SkillInUse` (carrying the job count) while any job uses the skill. Pages: a job list for everyone with All/Open/Closed tabs driven by `?status=`; a job detail page showing details and skill badges; Admin-only create and edit forms with skills as checkboxes; and a POST-only, Admin-only Delete button with a confirmation on the skills list. The Job Openings nav link now works. There are 64 passing tests: 19 new, of which 3 behaviors were driven by TDD. CLAUDE.md's status, inventory, and gotchas were updated.
+- **Deviations:** All three proposed TDD behaviors were approved unchanged. Before asking for approval of RED test 2, the agent added an assertion of its own that an unknown `?status=` value shows all jobs; the user approved it. Without asking, the agent made the job description required, made editing a job leave its status alone (close/reopen is Phase 5), and left job openings out of the Django admin to match Candidate and Skill, which aren't registered either. The CLAUDE.md edits that were already uncommitted at the start of the session were committed along with this phase.
+- **Sideways:**
+  - The first GREEN run of behavior 1 still failed: Django escapes the double quotes in flash messages as well as the apostrophe, so the literal `&#x27;` string in the approved test didn't match. As a mechanical repair, both message assertions now compare against `escape(...)`. A first `sed` attempt at that repair dropped the backslash before the apostrophe and caused a syntax error, which was fixed with the Edit tool. CLAUDE.md now notes the escaping gotcha.
+  - The full test suite now takes about 110 seconds, mostly because each logged-in fixture hashes a password. It hasn't been sped up yet.
+
 ## 2026-11-02 — Implemented Phase 3: Admin-only skills (TDD)
 
 ### Prompts

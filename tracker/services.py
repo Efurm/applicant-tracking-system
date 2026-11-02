@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 
-from .models import Candidate, Skill
+from .models import Candidate, JobOpening, JobStatus, Skill
 
 CANDIDATE_FIELDS = (
     "first_name",
@@ -112,3 +112,55 @@ def rename_skill(skill, name):
     check_skill_name_is_free(skill.name, skill)
     skill.save()
     return skill
+
+
+class SkillInUse(ValidationError):
+    """The skill can't be deleted because job openings use it."""
+
+    def __init__(self, skill, job_count):
+        self.skill = skill
+        self.job_count = job_count
+        noun = "job opening uses" if job_count == 1 else "job openings use"
+        super().__init__(
+            f'"{skill.name}" can\'t be deleted because {job_count} {noun} it.',
+            code="skill_in_use",
+        )
+
+
+@transaction.atomic
+def delete_skill(skill):
+    """Delete ``skill``, refusing with SkillInUse while any job opening uses it."""
+    job_count = skill.job_openings.count()
+    if job_count:
+        raise SkillInUse(skill, job_count)
+    skill.delete()
+
+
+def filter_jobs(status=""):
+    """Job openings with ``status`` (Open or Closed); any other value means all jobs."""
+    jobs = JobOpening.objects.all()
+    if status in JobStatus.values:
+        jobs = jobs.filter(status=status)
+    return jobs
+
+
+JOB_FIELDS = ("title", "department", "location", "employment_type", "description", "skills")
+
+
+@transaction.atomic
+def create_job(skills=(), **fields):
+    """Create an Open job opening with the given skills."""
+    job = JobOpening.objects.create(**fields)
+    job.skills.set(skills)
+    return job
+
+
+@transaction.atomic
+def update_job(job, skills=None, **fields):
+    """Update a job opening's details and, if given, replace its skills."""
+    for name, value in fields.items():
+        setattr(job, name, value)
+    job.save()
+    if skills is not None:
+        job.skills.set(skills)
+    return job

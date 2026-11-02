@@ -1,9 +1,10 @@
 import pytest
 from django.db import IntegrityError, transaction
 from django.urls import reverse
+from django.utils.html import escape
 
 from tracker import services
-from tracker.models import Skill
+from tracker.models import JobOpening, Skill
 
 
 @pytest.fixture
@@ -137,3 +138,55 @@ def test_admin_nav_skills_link_points_to_the_skill_list(admin_client):
     page = admin_client.get(reverse("tracker:home")).content.decode()
 
     assert f'href="{reverse("tracker:skill_list")}">Skills</a>' in page
+
+
+def test_admin_can_delete_an_unused_skill_but_not_one_a_job_uses(admin_client, skill):
+    unused = Skill.objects.create(name="Cobol")
+    job = JobOpening.objects.create(title="Backend Developer", department="Engineering")
+    job.skills.add(skill)
+
+    response = admin_client.post(reverse("tracker:skill_delete", args=[unused.pk]), follow=True)
+
+    assert not Skill.objects.filter(pk=unused.pk).exists()
+    assert escape('Deleted skill "Cobol".') in response.content.decode()
+
+    response = admin_client.post(reverse("tracker:skill_delete", args=[skill.pk]), follow=True)
+
+    assert Skill.objects.filter(pk=skill.pk).exists()
+    assert list(job.skills.all()) == [skill]
+    assert (
+        escape('"Python" can\'t be deleted because 1 job opening uses it.')
+        in response.content.decode()
+    )
+
+
+def test_staff_cannot_delete_a_skill(staff_client, skill):
+    url = reverse("tracker:skill_delete", args=[skill.pk])
+
+    assert staff_client.post(url).status_code == 403
+    assert Skill.objects.filter(pk=skill.pk).exists()
+
+
+def test_skill_delete_only_accepts_post(admin_client, skill):
+    response = admin_client.get(reverse("tracker:skill_delete", args=[skill.pk]))
+
+    assert response.status_code == 405
+    assert Skill.objects.filter(pk=skill.pk).exists()
+
+
+def test_delete_skill_service_refuses_a_skill_in_use_even_without_the_view(skill):
+    for title in ["Backend Developer", "Data Engineer"]:
+        JobOpening.objects.create(title=title, department="Engineering").skills.add(skill)
+
+    with pytest.raises(services.SkillInUse) as excinfo:
+        services.delete_skill(skill)
+
+    assert excinfo.value.job_count == 2
+    assert excinfo.value.message == '"Python" can\'t be deleted because 2 job openings use it.'
+    assert Skill.objects.filter(pk=skill.pk).exists()
+
+
+def test_skill_list_shows_a_delete_button_for_each_skill(admin_client, skill):
+    page = admin_client.get(reverse("tracker:skill_list")).content.decode()
+
+    assert f'action="{reverse("tracker:skill_delete", args=[skill.pk])}"' in page

@@ -2,7 +2,7 @@ from django import forms
 from django.utils.html import format_html
 
 from . import services
-from .models import Candidate, Skill
+from .models import Candidate, JobOpening, Skill
 
 
 class CandidateForm(forms.ModelForm):
@@ -39,3 +39,13 @@ class SkillForm(forms.ModelForm):
         except services.DuplicateSkillName as error:
             raise forms.ValidationError(error.message, code=error.code) from error
         return name
+
+
+class JobOpeningForm(forms.ModelForm):
+    class Meta:
+        model = JobOpening
+        fields = services.JOB_FIELDS
+        widgets = {
+            "description": forms.Textarea(attrs={"rows": 6}),
+            "skills": forms.CheckboxSelectMultiple,
+        }

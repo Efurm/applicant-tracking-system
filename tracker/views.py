@@ -1,9 +1,10 @@
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from . import services
-from .forms import CandidateForm, SkillForm
-from .models import Candidate, Skill
+from .forms import CandidateForm, JobOpeningForm, SkillForm
+from .models import Candidate, JobOpening, JobStatus, Skill
 from .permissions import admin_required
 
 
@@ -70,3 +71,54 @@ def skill_edit(request, pk):
         messages.success(request, f'Renamed skill to "{skill.name}".')
         return redirect("tracker:skill_list")
     return render(request, "tracker/skills/form.html", {"form": form, "skill": skill})
+
+
+@admin_required
+@require_POST
+def skill_delete(request, pk):
+    skill = get_object_or_404(Skill, pk=pk)
+    try:
+        services.delete_skill(skill)
+    except services.SkillInUse as error:
+        messages.error(request, error.message)
+    else:
+        messages.success(request, f'Deleted skill "{skill.name}".')
+    return redirect("tracker:skill_list")
+
+
+def job_list(request):
+    status = request.GET.get("status", "")
+    if status not in JobStatus.values:
+        status = ""
+    jobs = services.filter_jobs(status)
+    return render(
+        request,
+        "tracker/jobs/list.html",
+        {"jobs": jobs, "status": status, "status_choices": JobStatus.choices},
+    )
+
+
+def job_detail(request, pk):
+    job = get_object_or_404(JobOpening.objects.prefetch_related("skills"), pk=pk)
+    return render(request, "tracker/jobs/detail.html", {"job": job})
+
+
+@admin_required
+def job_create(request):
+    form = JobOpeningForm(_form_data(request))
+    if request.method == "POST" and form.is_valid():
+        job = services.create_job(**form.cleaned_data)
+        messages.success(request, f'Created job opening "{job.title}".')
+        return redirect(job)
+    return render(request, "tracker/jobs/form.html", {"form": form})
+
+
+@admin_required
+def job_edit(request, pk):
+    job = get_object_or_404(JobOpening, pk=pk)
+    form = JobOpeningForm(_form_data(request), instance=job)
+    if request.method == "POST" and form.is_valid():
+        services.update_job(job, **form.cleaned_data)
+        messages.success(request, f'Saved changes to "{job.title}".')
+        return redirect(job)
+    return render(request, "tracker/jobs/form.html", {"form": form, "job": job})

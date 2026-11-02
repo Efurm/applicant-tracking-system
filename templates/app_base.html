@@ -6,7 +6,7 @@
     <ul class="menu menu-horizontal px-1">
       <li><a href="#">Workspace</a></li>
       <li><a href="{% url 'tracker:candidate_list' %}">Candidates</a></li>
-      <li><a href="#">Job Openings</a></li>
+      <li><a href="{% url 'tracker:job_list' %}">Job Openings</a></li>
       {% if user.is_admin %}
       <li><a href="{% url 'tracker:skill_list' %}">Skills</a></li>
       {% endif %}

@@ -1,0 +1,37 @@
+{% extends "app_base.html" %}
+{% block title %}Job Openings · Applicant Tracking System{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between gap-4 mb-4">
+  <h1 class="text-2xl font-bold">Job Openings</h1>
+  {% if user.is_admin %}
+  <a href="{% url 'tracker:job_create' %}" class="btn btn-primary">New job opening</a>
+  {% endif %}
+</div>
+{% include "tracker/_messages.html" %}
+<div role="tablist" aria-label="Filter by status" class="tabs tabs-box mb-4 w-fit">
+  <a role="tab" href="{% url 'tracker:job_list' %}" class="tab{% if not status %} tab-active{% endif %}">All</a>
+  {% for value, label in status_choices %}
+  <a role="tab" href="{% url 'tracker:job_list' %}?status={{ value }}" class="tab{% if status == value %} tab-active{% endif %}">{{ label }}</a>
+  {% endfor %}
+</div>
+<div class="card bg-base-100 shadow">
+  <div class="overflow-x-auto">
+    <table class="table">
+      <thead><tr><th>Title</th><th>Department</th><th>Location</th><th>Type</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr class="hover">
+          <td><a href="{{ job.get_absolute_url }}" class="link link-hover font-medium">{{ job.title }}</a></td>
+          <td>{{ job.department }}</td>
+          <td>{{ job.location|default:"—" }}</td>
+          <td>{{ job.get_employment_type_display }}</td>
+          <td><span class="badge {% if job.is_open %}badge-success{% else %}badge-ghost{% endif %}">{{ job.get_status_display }}</span></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-center opacity-70">No job openings{% if status %} with this status{% endif %}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -15,7 +15,16 @@
           {% for skill in skills %}
           <tr class="hover">
             <td class="font-medium">{{ skill.name }}</td>
-            <td class="text-right"><a href="{% url 'tracker:skill_edit' skill.pk %}" class="btn btn-xs btn-outline">Rename</a></td>
+            <td class="text-right">
+              <div class="flex justify-end gap-2">
+                <a href="{% url 'tracker:skill_edit' skill.pk %}" class="btn btn-xs btn-outline">Rename</a>
+                <form method="post" action="{% url 'tracker:skill_delete' skill.pk %}"
+                      onsubmit="return confirm('Delete the skill &quot;{{ skill.name|escapejs }}&quot;?');">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-xs btn-outline btn-error">Delete</button>
+                </form>
+              </div>
+            </td>
           </tr>
           {% empty %}
           <tr><td colspan="2" class="text-center opacity-70">No skills yet.</td></tr>

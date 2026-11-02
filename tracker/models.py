@@ -55,3 +55,44 @@ class Skill(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class EmploymentType(models.TextChoices):
+    FULL_TIME = "full_time", "Full-time"
+    PART_TIME = "part_time", "Part-time"
+    CONTRACT = "contract", "Contract"
+    INTERNSHIP = "internship", "Internship"
+
+
+class JobStatus(models.TextChoices):
+    OPEN = "open", "Open"
+    CLOSED = "closed", "Closed"
+
+
+class JobOpening(models.Model):
+    """A role the hiring team is recruiting for, with the skills it needs."""
+
+    title = models.CharField(max_length=200)
+    department = models.CharField(max_length=100)
+    location = models.CharField(max_length=100, blank=True)
+    employment_type = models.CharField(
+        max_length=20, choices=EmploymentType, default=EmploymentType.FULL_TIME
+    )
+    description = models.TextField()
+    status = models.CharField(max_length=10, choices=JobStatus, default=JobStatus.OPEN)
+    skills = models.ManyToManyField(Skill, blank=True, related_name="job_openings")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["title", "pk"]
+
+    def __str__(self):
+        return self.title
+
+    def get_absolute_url(self):
+        return reverse("tracker:job_detail", args=[self.pk])
+
+    @property
+    def is_open(self):
+        return self.status == JobStatus.OPEN

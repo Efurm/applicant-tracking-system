@@ -1,0 +1,215 @@
+import pytest
+from django.urls import reverse
+
+from tracker.models import EmploymentType, JobOpening, JobStatus, Skill
+
+
+@pytest.fixture
+def open_job(db):
+    return JobOpening.objects.create(
+        title="Backend Developer", department="Engineering", description="Build APIs."
+    )
+
+
+@pytest.fixture
+def closed_job(db):
+    return JobOpening.objects.create(
+        title="Data Analyst",
+        department="Finance",
+        description="Analyze data.",
+        status=JobStatus.CLOSED,
+    )
+
+
+def test_job_list_filters_by_status_from_the_url(staff_client, open_job, closed_job):
+    url = reverse("tracker:job_list")
+
+    assert list(staff_client.get(url).context["jobs"]) == [open_job, closed_job]
+    assert list(staff_client.get(url, {"status": "open"}).context["jobs"]) == [open_job]
+    assert list(staff_client.get(url, {"status": "closed"}).context["jobs"]) == [closed_job]
+    assert list(staff_client.get(url, {"status": "bogus"}).context["jobs"]) == [
+        open_job,
+        closed_job,
+    ]
+
+
+def test_admin_creates_a_job_with_several_skills_that_other_jobs_can_share(admin_client, open_job):
+    python, sql, excel = (Skill.objects.create(name=n) for n in ["Python", "SQL", "Excel"])
+    open_job.skills.add(python)
+
+    response = admin_client.post(
+        reverse("tracker:job_create"),
+        {
+            "title": "Data Engineer",
+            "department": "Engineering",
+            "location": "Remote",
+            "employment_type": EmploymentType.CONTRACT,
+            "description": "Build pipelines.",
+            "skills": [python.pk, sql.pk],
+        },
+    )
+
+    job = JobOpening.objects.get(title="Data Engineer")
+    assert response.status_code == 302
+    assert response.url == job.get_absolute_url()
+    assert (job.department, job.location, job.employment_type, job.status) == (
+        "Engineering",
+        "Remote",
+        EmploymentType.CONTRACT,
+        JobStatus.OPEN,
+    )
+    assert job.description == "Build pipelines."
+    assert list(job.skills.all()) == [python, sql]
+    assert list(python.job_openings.all()) == [open_job, job]
+
+
+def job_form_data(**overrides):
+    data = {
+        "title": "Data Engineer",
+        "department": "Engineering",
+        "location": "",
+        "employment_type": EmploymentType.FULL_TIME,
+        "description": "Build pipelines.",
+    }
+    return data | overrides
+
+
+def test_staff_can_view_jobs_but_are_refused_on_create_and_edit(staff_client, open_job):
+    assert staff_client.get(reverse("tracker:job_list")).status_code == 200
+    assert staff_client.get(open_job.get_absolute_url()).status_code == 200
+
+    create_url = reverse("tracker:job_create")
+    edit_url = reverse("tracker:job_edit", args=[open_job.pk])
+    assert staff_client.get(create_url).status_code == 403
+    assert staff_client.get(edit_url).status_code == 403
+    assert staff_client.post(create_url, job_form_data()).status_code == 403
+    assert staff_client.post(edit_url, job_form_data(title="Hacked")).status_code == 403
+
+    open_job.refresh_from_db()
+    assert open_job.title == "Backend Developer"
+    assert JobOpening.objects.count() == 1
+
+
+def test_staff_see_no_create_or_edit_controls(staff_client, open_job):
+    list_page = staff_client.get(reverse("tracker:job_list")).content.decode()
+    detail_page = staff_client.get(open_job.get_absolute_url()).content.decode()
+
+    assert reverse("tracker:job_create") not in list_page
+    assert reverse("tracker:job_edit", args=[open_job.pk]) not in detail_page
+
+
+def test_admin_sees_create_and_edit_controls(admin_client, open_job):
+    list_page = admin_client.get(reverse("tracker:job_list")).content.decode()
+    detail_page = admin_client.get(open_job.get_absolute_url()).content.decode()
+
+    assert reverse("tracker:job_create") in list_page
+    assert reverse("tracker:job_edit", args=[open_job.pk]) in detail_page
+    assert admin_client.get(reverse("tracker:job_create")).status_code == 200
+    assert admin_client.get(reverse("tracker:job_edit", args=[open_job.pk])).status_code == 200
+
+
+def test_job_pages_require_login(client, open_job):
+    for url in [
+        reverse("tracker:job_list"),
+        reverse("tracker:job_create"),
+        open_job.get_absolute_url(),
+        reverse("tracker:job_edit", args=[open_job.pk]),
+    ]:
+        response = client.get(url)
+        assert response.status_code == 302, url
+        assert response.url == f"{reverse('login')}?next={url}"
+
+
+def test_create_form_requires_title_department_and_description(admin_client, db):
+    response = admin_client.post(reverse("tracker:job_create"), {})
+
+    assert response.status_code == 200
+    assert set(response.context["form"].errors) == {
+        "title",
+        "department",
+        "employment_type",
+        "description",
+    }
+    assert not JobOpening.objects.exists()
+
+
+def test_a_job_can_be_created_without_skills_or_location(admin_client, db):
+    response = admin_client.post(reverse("tracker:job_create"), job_form_data())
+
+    assert response.status_code == 302
+    job = JobOpening.objects.get()
+    assert job.location == ""
+    assert not job.skills.exists()
+
+
+def test_admin_edits_a_job_and_replaces_its_skills(admin_client, open_job):
+    python, sql = Skill.objects.create(name="Python"), Skill.objects.create(name="SQL")
+    open_job.skills.add(python)
+
+    response = admin_client.post(
+        reverse("tracker:job_edit", args=[open_job.pk]),
+        job_form_data(
+            title="Senior Backend Developer",
+            location="Austin, TX",
+            employment_type=EmploymentType.PART_TIME,
+            skills=[sql.pk],
+        ),
+    )
+
+    assert response.status_code == 302
+    assert response.url == open_job.get_absolute_url()
+    open_job.refresh_from_db()
+    assert open_job.title == "Senior Backend Developer"
+    assert open_job.location == "Austin, TX"
+    assert open_job.employment_type == EmploymentType.PART_TIME
+    assert list(open_job.skills.all()) == [sql]
+
+
+def test_editing_a_job_with_no_skills_checked_removes_them_all(admin_client, open_job):
+    open_job.skills.add(Skill.objects.create(name="Python"))
+
+    admin_client.post(reverse("tracker:job_edit", args=[open_job.pk]), job_form_data())
+
+    assert not open_job.skills.exists()
+
+
+def test_editing_a_job_keeps_its_status(admin_client, closed_job):
+    admin_client.post(reverse("tracker:job_edit", args=[closed_job.pk]), job_form_data())
+
+    closed_job.refresh_from_db()
+    assert closed_job.status == JobStatus.CLOSED
+
+
+def test_job_detail_shows_details_and_skills(staff_client, open_job):
+    open_job.skills.add(Skill.objects.create(name="Django"), Skill.objects.create(name="SQL"))
+    open_job.location = "Remote"
+    open_job.save()
+
+    page = staff_client.get(open_job.get_absolute_url()).content.decode()
+
+    for text in [
+        "Backend Developer",
+        "Engineering",
+        "Remote",
+        "Full-time",
+        "Build APIs.",
+        "Django",
+        "SQL",
+    ]:
+        assert text in page, text
+
+
+def test_job_create_form_lists_every_skill_as_a_checkbox(admin_client, db):
+    for name in ["SQL", "Python"]:
+        Skill.objects.create(name=name)
+
+    page = admin_client.get(reverse("tracker:job_create")).content.decode()
+
+    assert page.count('type="checkbox" name="skills"') == 2
+    assert page.index("Python") < page.index("SQL")
+
+
+def test_nav_job_openings_link_points_to_the_job_list(staff_client):
+    page = staff_client.get(reverse("tracker:home")).content.decode()
+
+    assert f'href="{reverse("tracker:job_list")}">Job Openings</a>' in page

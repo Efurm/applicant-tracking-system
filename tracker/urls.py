@@ -10,7 +10,12 @@ urlpatterns = [
     path("candidates/new/", views.candidate_create, name="candidate_create"),
     path("candidates/<int:pk>/", views.candidate_detail, name="candidate_detail"),
     path("candidates/<int:pk>/edit/", views.candidate_edit, name="candidate_edit"),
+    path("jobs/", views.job_list, name="job_list"),
+    path("jobs/new/", views.job_create, name="job_create"),
+    path("jobs/<int:pk>/", views.job_detail, name="job_detail"),
+    path("jobs/<int:pk>/edit/", views.job_edit, name="job_edit"),
     path("skills/", views.skill_list, name="skill_list"),
     path("skills/new/", views.skill_create, name="skill_create"),
     path("skills/<int:pk>/edit/", views.skill_edit, name="skill_edit"),
+    path("skills/<int:pk>/delete/", views.skill_delete, name="skill_delete"),
 ]
