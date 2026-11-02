@@ -7,7 +7,7 @@ subclass), which the caller turns into a message for the user.
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 
 from .models import (
     FINAL_STAGES,
@@ -353,6 +353,21 @@ def filter_applications(job=None, stage="", query=""):
             Q(candidate__first_name__icontains=word) | Q(candidate__last_name__icontains=word)
         )
     return applications
+
+
+def stage_counts(job):
+    """[(stage, count)] of ``job``'s applications, one pair per ``Stage`` in order.
+
+    Stages with no applications are included with a count of 0.
+    """
+    counts = dict(
+        Application.objects.filter(job=job)
+        .order_by()
+        .values("stage")
+        .annotate(count=Count("pk"))
+        .values_list("stage", "count")
+    )
+    return [(stage, counts.get(stage, 0)) for stage in Stage]
 
 
 ENDING_STAGES = (Stage.REJECTED, Stage.WITHDRAWN)

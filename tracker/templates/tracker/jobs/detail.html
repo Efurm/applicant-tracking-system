@@ -40,6 +40,19 @@
         <span><strong>Closed to new applicants.</strong> Applicants already in progress keep moving through the pipeline.</span>
       </div>
       {% endif %}
+      <section class="mt-4" aria-labelledby="stage-counts-heading">
+        <h2 id="stage-counts-heading" class="font-semibold mb-2">Applications by stage</h2>
+        <div class="stats stats-vertical sm:stats-horizontal grid grid-cols-2 sm:grid-cols-4 grid-flow-row w-full border border-base-300">
+          {% url 'tracker:application_workspace' as workspace_url %}
+          {% for stage, count in stage_counts %}
+          <a href="{{ workspace_url }}?job={{ job.pk }}&amp;stage={{ stage.value }}" data-stage-count="{{ stage.value }}"
+             class="stat hover:bg-base-200 focus-visible:bg-base-200">
+            <span class="stat-title">{{ stage.label }}</span>
+            <span class="stat-value text-2xl{% if not count %} opacity-40{% endif %}">{{ count }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </section>
       <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3 mt-4 text-sm">
         <dt class="font-semibold">Employment type</dt>
         <dd class="sm:col-span-2">{{ job.get_employment_type_display }}</dd>

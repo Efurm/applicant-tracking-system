@@ -19,12 +19,11 @@ Run everything through `uv run` (on Windows, bare `python` isn't on PATH).
 
 ## Status
 
-Phases 1–12 are done (auth, candidates, skills, jobs, close/reopen, recording applications, read-only workspace, HTMX stage moves, Reject/Withdraw and the final lock, move notes and the stage-history timeline, Admin reopen of final applications, archiving and deleting candidates); 199 tests.
-Next is **Phase 13: Job stage counts** (below).
+Phases 1–13 are done (auth, candidates, skills, jobs, close/reopen, recording applications, read-only workspace, HTMX stage moves, Reject/Withdraw and the final lock, move notes and the stage-history timeline, Admin reopen of final applications, archiving and deleting candidates, job stage counts); 202 tests.
+Next is **Phase 14: the demo-data command** (below).
 
-Later phases:
-- **13:** job stage counts: a DaisyUI stats row on the job page, one count per `Stage` (zeros included), each linking to `tracker:application_workspace` with `?job=<pk>&stage=<value>`.
-- **14:** the demo-data command (all history through `move_application`, including notes and an Admin reopen).
+Later phase:
+- **14:** the demo-data command (all history through `move_application`, including notes and an Admin reopen). Service order matters: record applications before `close_job`; reach final stages before `archive_candidate` (refused while any application is in progress); do the Admin reopen before archiving that candidate (refused after).
 
 ## What exists
 
@@ -32,7 +31,7 @@ Later phases:
 - **`tracker`** (namespace `tracker:`, mounted at `/`; home is `tracker:home`):
   - `Candidate` list (`?q=`, `?archived=1` to include archived; hidden by default via `search_candidates(query, include_archived=False)`), create, detail (lists its applications; an `Archived` badge and message), edit, and `candidate_apply` (`/candidates/<pk>/apply/`), whose `ApplicationForm(candidate=...)` offers only `services.jobs_open_to(candidate)` (none when archived). The apply view flashes and redirects an archived candidate on GET and POST; `create_application` raises `CandidateArchived(candidate, APPLY_REFUSAL)` first (`CandidateArchived`'s optional `consequence` finishes its message; the default is the reopen wording)
   - Admin-only POST `candidate_archive`/`candidate_unarchive`/`candidate_delete` on the candidate page. `archive_candidate` raises `CandidateHasApplicationsInProgress` (`.in_progress_count`); `delete_candidate` raises `CandidateHasApplications` (`.application_count`, message ends "Archive them instead.") and redirects to the list on success. The panel hides Admin reopen buttons (and the form) for an archived candidate and says why
-  - `JobOpening` (M2M `skills`, reverse `job_openings`; `status` via `JobStatus`; `employment_type`; `is_open`). List (`?status=open|closed`) and detail for everyone; Admin-only create/edit and POST `job_close`/`job_reopen` (the only way to change `status`). Closed jobs show "Closed to new applicants"
+  - `JobOpening` (M2M `skills`, reverse `job_openings`; `status` via `JobStatus`; `employment_type`; `is_open`). List (`?status=open|closed`) and detail for everyone; Admin-only create/edit and POST `job_close`/`job_reopen` (the only way to change `status`). Closed jobs show "Closed to new applicants". The detail page has an "Applications by stage" DaisyUI stats grid from `services.stage_counts(job)` (`[(Stage, count)]`, every `Stage` in order, zeros included); each `data-stage-count="<value>"` link goes to the workspace with `?job=<pk>&stage=<value>`
   - Admin-only `Skill` list, create, rename, and POST delete (refused with `SkillInUse` while a job uses it) under `/skills/`
   - `Application` (`candidate`/`job` FKs `PROTECT`, reverse `applications`, unique together; `source`, `source_details`, `stage` default Applied, `applied_on`; newest first; `is_final`, `pipeline_progress()`). `PIPELINE_STAGES`, `IN_PROGRESS_STAGES`, `FINAL_STAGES` are module-level in `tracker/models.py`; `services.ENDING_STAGES` is Rejected and Withdrawn
   - `StageChange` (`application` FK, reverse `stage_changes`; `from_stage`, `to_stage`, `changed_by` user `PROTECT`, `changed_at`, optional `note`; ordered by time). Every stage change goes through `services.move_application(application, to_stage, user, note="")` (the note is stripped): it re-reads the stage with `select_for_update`, checks it against `allowed_next_stages(stage, user)` (the same rule that draws the buttons: later pipeline stages then `ENDING_STAGES` from in-progress; from final, `IN_PROGRESS_STAGES` for Admins (reopen) and nothing for Staff), and raises `InvalidStageMove` or saves and writes a `StageChange` in one transaction. A move out of a final stage re-reads `candidate.archived` and raises `CandidateArchived` (`.candidate`) if set. Job status is ignored
@@ -44,13 +43,14 @@ Later phases:
 
 ## Conventions and gotchas
 
-- Status-only services (`close_job`, `reopen_job`) set the field and `save(update_fields=[..., "updated_at"])`, leaving other fields and M2M untouched. Use the same shape for archive/unarchive.
+- Status-only services (`close_job`, `reopen_job`) set the field and `save(update_fields=[..., "updated_at"])`, leaving other fields and M2M untouched. `archive_candidate`/`unarchive_candidate` follow the same shape.
 - Services raise `ValidationError` subclasses that carry context (e.g. `DuplicateCandidateEmail.existing`, `SkillInUse.job_count`, `InvalidStageMove.to_stage`).
 - Editable fields are tuples in `services.py` (`CANDIDATE_FIELDS`, `JOB_FIELDS`, `APPLICATION_FIELDS`) used as `ModelForm.Meta.fields`, so views call `services.create_x(**form.cleaned_data)`. M2M values are `.set(...)` inside the service's `@transaction.atomic`; `update_job(skills=None)` leaves skills alone.
 - `ModelForm.is_valid()` checks model constraints first, so a uniqueness rule needing a friendly error goes in the form's `clean_<field>`, calling the service check (`CandidateForm.clean_email`). When the view supplies a related object (e.g. `ApplicationForm`'s candidate), limit choices with a service queryset and catch refusals with `form.add_error(None, error)`.
 - Bind forms with `_form_data(request)` in `tracker/views.py`, not `request.POST or None`, which leaves an empty POST unbound with no errors.
+- Views catch only the refusals they list: `candidate_apply` catches `(CandidateArchived, JobClosedToApplicants, DuplicateApplication)`, `candidate_archive` `CandidateHasApplicationsInProgress`, `candidate_delete` `CandidateHasApplications`, `skill_delete` `SkillInUse`. A new refusal must be added there, or it becomes a 500.
 - Admin-only views use `@admin_required` (`tracker/permissions.py`, 403 for Staff); hide their controls with `{% if user.is_admin %}`. Test both roles, GET and POST.
-- Actions without a form page (skill delete, job close/reopen, candidate archive/unarchive/delete) are `@require_POST` views (under `@admin_required`) triggered by an inline `<form method="post">`, with `confirm()` for destructive ones. They flash a message and redirect.
+- Actions without a form page (skill delete, job close/reopen, candidate archive/unarchive/delete) are `@require_POST` views (under `@admin_required`) triggered by an inline `<form method="post">`, with `confirm()` for destructive ones. They flash a message and redirect (so the target page must include `_messages.html`). `confirm('...')` sits in a double-quoted `onsubmit`: avoid apostrophes in its text (write "cannot") and pass names through `|escapejs`.
 - HTMX actions (stage moves, including Reject/Withdraw and Admin reopen): the form has both `action` and `hx-post` plus `{% csrf_token %}`. With `HX-Request` the view renders a partial (panel + `_row.html` with `oob=True`, `id="application-row-<pk>"`); refusals render in place at status 200, since HTMX skips 4xx swaps by default. `application_move` catches only `(InvalidStageMove, CandidateArchived)`, so add any new move refusal to that tuple or it becomes a 500. Without HTMX it flashes and redirects. Partial links use the full `{% url %}` path plus `filter_query`, never a bare `?…`. Tests pass `headers={"HX-Request": "true"}`.
 - List filters come from the query string. Unknown values fall back to the default, and the view passes the cleaned value back so the active tab or `<option selected>` matches.
 - Case-insensitive uniqueness uses `UniqueConstraint(Lower(...))` plus an `__iexact` service check. Candidate emails are lowercased; skill names keep their capitalization (whitespace collapsed).

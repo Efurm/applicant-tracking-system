@@ -170,7 +170,11 @@ def job_list(request):
 
 def job_detail(request, pk):
     job = get_object_or_404(JobOpening.objects.prefetch_related("skills"), pk=pk)
-    return render(request, "tracker/jobs/detail.html", {"job": job})
+    return render(
+        request,
+        "tracker/jobs/detail.html",
+        {"job": job, "stage_counts": services.stage_counts(job)},
+    )
 
 
 @admin_required

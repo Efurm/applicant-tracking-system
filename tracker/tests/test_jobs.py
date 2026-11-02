@@ -2,7 +2,8 @@ from django.urls import reverse
 from django.utils.html import escape
 
 from tracker import services
-from tracker.models import EmploymentType, JobOpening, JobStatus, Skill
+from tracker.models import EmploymentType, JobOpening, JobStatus, Skill, Stage
+from tracker.tests.html import marked
 
 
 def test_job_list_filters_by_status_from_the_url(staff_client, open_job, closed_job):
@@ -312,3 +313,81 @@ def test_staff_see_no_close_or_reopen_controls(staff_client, open_job, closed_jo
 
     assert reverse("tracker:job_close", args=[open_job.pk]) not in open_page
     assert reverse("tracker:job_reopen", args=[closed_job.pk]) not in closed_page
+
+
+def _candidates(count):
+    return [
+        services.create_candidate(
+            first_name=f"Person{i}", last_name="Test", email=f"p{i}@example.com"
+        )
+        for i in range(count)
+    ]
+
+
+def test_stage_counts_cover_every_stage_in_order_for_that_job_only(make_application, open_job):
+    other_job = services.create_job(
+        title="Recruiter", department="People", employment_type=EmploymentType.FULL_TIME
+    )
+    first, second, third, fourth = _candidates(4)
+    make_application(Stage.SCREENING, candidate=first)
+    make_application(Stage.SCREENING, candidate=second)
+    make_application(Stage.REJECTED, candidate=third)
+    make_application(Stage.OFFER, candidate=fourth, job=other_job)
+
+    counts = services.stage_counts(open_job)
+
+    assert counts == [
+        (Stage.APPLIED, 0),
+        (Stage.SCREENING, 2),
+        (Stage.INTERVIEW, 0),
+        (Stage.FINAL_REVIEW, 0),
+        (Stage.OFFER, 0),
+        (Stage.HIRED, 0),
+        (Stage.REJECTED, 1),
+        (Stage.WITHDRAWN, 0),
+    ]
+
+
+def test_job_page_links_each_stage_count_to_the_filtered_workspace(
+    staff_client, make_application, open_job
+):
+    first, second = _candidates(2)
+    make_application(Stage.INTERVIEW, candidate=first)
+    make_application(Stage.HIRED, candidate=second)
+
+    response = staff_client.get(open_job.get_absolute_url())
+
+    workspace = reverse("tracker:application_workspace")
+    expected_counts = {Stage.INTERVIEW: 1, Stage.HIRED: 1}
+    assert [
+        (value, attrs["href"], text) for value, attrs, text in marked(response, "data-stage-count")
+    ] == [
+        (
+            stage.value,
+            f"{workspace}?job={open_job.pk}&stage={stage.value}",
+            f"{stage.label} {expected_counts.get(stage, 0)}",
+        )
+        for stage in Stage
+    ]
+
+
+def test_a_stage_count_link_opens_the_workspace_on_that_jobs_applications_in_that_stage(
+    staff_client, make_application, open_job
+):
+    other_job = services.create_job(
+        title="Recruiter", department="People", employment_type=EmploymentType.FULL_TIME
+    )
+    first, second, third = _candidates(3)
+    hired = make_application(Stage.HIRED, candidate=first)
+    make_application(Stage.INTERVIEW, candidate=second)
+    make_application(Stage.HIRED, candidate=third, job=other_job)
+    page = staff_client.get(open_job.get_absolute_url())
+    hired_link = next(
+        attrs["href"]
+        for value, attrs, _ in marked(page, "data-stage-count")
+        if value == Stage.HIRED
+    )
+
+    response = staff_client.get(hired_link)
+
+    assert list(response.context["applications"]) == [hired]

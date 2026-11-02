@@ -30,6 +30,28 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 13: job stage counts (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 13`
+2. `approved,go ahead` (the two TDD behaviors: `services.stage_counts(job)`, and the job page's linked counts)
+3. `go ahead` (approved the RED test for behavior 1)
+4. `go ahead` (move on to behavior 2)
+5. `go ahead` (approved the RED test for behavior 2)
+6. `go ahead` (round-trip test, feedback loops, and finishing the phase)
+
+### Summary
+- **Outcome:** Each job opening's page now has an "Applications by stage" DaisyUI stats grid. It shows one count per stage in pipeline order (zeros included and dimmed), and each count links to the workspace filtered to that job and stage.
+  - **Service:** `services.stage_counts(job)` groups the job's applications with `values("stage").annotate(Count("pk"))`, clearing the model's default ordering so the grouping works, then fills in every `Stage` in order.
+  - **View and template:** `job_detail` passes `stage_counts`. `jobs/detail.html` renders `<a data-stage-count="<value>" class="stat">` links to `tracker:application_workspace?job=<pk>&stage=<value>`, laid out in a 2-column/4-column grid so all eight fit the page width.
+  - **Tests:** 202 pass (up from 199): the service counts (every stage, zeros, other jobs excluded), the page's labels, counts, and URLs for all eight stages, and a round-trip test that follows the Hired link and gets only that job's hired application. CLAUDE.md was updated, with Phase 14 listed as next.
+- **Deviations:** None. The user approved each TDD step as proposed. The agent picked two behaviors instead of three, because the workspace already honored both filters and had tests.
+- **Sideways:**
+  - The first draft of the service test applied to `closed_job` for the "other job" case. `create_application` refused that, so the test errored instead of failing on an assertion. It was switched to a second open job before the RED step was shown.
+  - Ruff flagged the import order after the `marked` import was added with `sed`. `ruff check --fix` sorted it.
+
+---
+
 ## 2026-11-02 — Implemented Phase 12: archiving and deleting candidates (TDD)
 
 ### Prompts
