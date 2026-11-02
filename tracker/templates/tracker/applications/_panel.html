@@ -38,7 +38,7 @@
     {% endfor %}
   </ul>
   {% if application.is_final %}
-  <div role="status" class="alert alert-soft mt-4 text-sm" data-final-message>This application ended as <strong>{{ application.get_stage_display }}</strong>. {% if reopen_moves %}As an Admin, you can reopen it to an in-progress stage.{% else %}It is final, so it can't be moved.{% endif %}</div>
+  <div role="status" class="alert alert-soft mt-4 text-sm" data-final-message>This application ended as <strong>{{ application.get_stage_display }}</strong>. {% if reopen_moves %}As an Admin, you can reopen it to an in-progress stage.{% elif user.is_admin and candidate_archived %}The candidate is archived, so it can't be reopened until they're unarchived.{% else %}It is final, so it can't be moved.{% endif %}</div>
   {% endif %}
 
   {% if move_error %}

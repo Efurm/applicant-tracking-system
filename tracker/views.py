@@ -21,10 +21,14 @@ def home(request):
 
 
 def candidate_list(request):
+    """Candidates matching ``?q=``; archived ones only with ``?archived=1``."""
     query = request.GET.get("q", "")
-    candidates = services.search_candidates(query)
+    show_archived = request.GET.get("archived", "") == "1"
+    candidates = services.search_candidates(query, include_archived=show_archived)
     return render(
-        request, "tracker/candidates/list.html", {"candidates": candidates, "query": query}
+        request,
+        "tracker/candidates/list.html",
+        {"candidates": candidates, "query": query, "show_archived": show_archived},
     )
 
 
@@ -57,16 +61,60 @@ def candidate_edit(request, pk):
 
 def candidate_apply(request, pk):
     candidate = get_object_or_404(Candidate, pk=pk)
+    if candidate.archived:
+        messages.error(
+            request, services.CandidateArchived(candidate, services.APPLY_REFUSAL).message
+        )
+        return redirect(candidate)
     form = ApplicationForm(_form_data(request), candidate=candidate)
     if request.method == "POST" and form.is_valid():
         try:
             application = services.create_application(candidate, **form.cleaned_data)
-        except (services.JobClosedToApplicants, services.DuplicateApplication) as error:
+        except (
+            services.CandidateArchived,
+            services.JobClosedToApplicants,
+            services.DuplicateApplication,
+        ) as error:
             form.add_error(None, error)
         else:
             messages.success(request, f'Recorded application to "{application.job.title}".')
             return redirect(candidate)
     return render(request, "tracker/candidates/apply.html", {"form": form, "candidate": candidate})
+
+
+@admin_required
+@require_POST
+def candidate_archive(request, pk):
+    candidate = get_object_or_404(Candidate, pk=pk)
+    try:
+        services.archive_candidate(candidate)
+    except services.CandidateHasApplicationsInProgress as error:
+        messages.error(request, error.message)
+    else:
+        messages.success(request, f"Archived {candidate.full_name}.")
+    return redirect(candidate)
+
+
+@admin_required
+@require_POST
+def candidate_unarchive(request, pk):
+    candidate = get_object_or_404(Candidate, pk=pk)
+    services.unarchive_candidate(candidate)
+    messages.success(request, f"Unarchived {candidate.full_name}.")
+    return redirect(candidate)
+
+
+@admin_required
+@require_POST
+def candidate_delete(request, pk):
+    candidate = get_object_or_404(Candidate, pk=pk)
+    try:
+        services.delete_candidate(candidate)
+    except services.CandidateHasApplications as error:
+        messages.error(request, error.message)
+        return redirect(candidate)
+    messages.success(request, f"Deleted {candidate.full_name}.")
+    return redirect("tracker:candidate_list")
 
 
 @admin_required
@@ -191,6 +239,8 @@ def _panel_context(request, application, filter_query, move_error=None):
     """
     allowed = services.allowed_next_stages(application.stage, request.user)
     reopening = application.is_final
+    if reopening and application.candidate.archived:
+        allowed = ()
     return {
         "application": application,
         "selected": application,
@@ -206,6 +256,7 @@ def _panel_context(request, application, filter_query, move_error=None):
         "reopen_moves": list(allowed) if reopening else [],
         "stage_changes": application.stage_changes.select_related("changed_by"),
         "move_error": move_error,
+        "candidate_archived": application.candidate.archived,
     }
 
 

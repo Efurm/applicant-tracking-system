@@ -1,6 +1,7 @@
 {% extends "app_base.html" %}
 {% block title %}Candidates · Applicant Tracking System{% endblock %}
 {% block content %}
+{% include "tracker/_messages.html" %}
 <div class="flex items-center justify-between gap-4 mb-4">
   <h1 class="text-2xl font-bold">Candidates</h1>
   <a href="{% url 'tracker:candidate_create' %}" class="btn btn-primary">New candidate</a>
@@ -9,7 +10,12 @@
   <input type="search" name="q" value="{{ query }}" placeholder="Search by name or email"
          aria-label="Search candidates" class="input input-bordered w-full max-w-md">
   <button type="submit" class="btn">Search</button>
-  {% if query %}<a href="{% url 'tracker:candidate_list' %}" class="btn btn-ghost">Clear</a>{% endif %}
+  {% if query %}<a href="{% url 'tracker:candidate_list' %}{% if show_archived %}?archived=1{% endif %}" class="btn btn-ghost">Clear</a>{% endif %}
+  <label class="label cursor-pointer gap-2 ml-2">
+    <input type="checkbox" name="archived" value="1" class="checkbox checkbox-sm"
+           {% if show_archived %}checked{% endif %} onchange="this.form.submit()" data-show-archived>
+    <span class="label-text">Show archived</span>
+  </label>
 </form>
 <div class="card bg-base-100 shadow">
   <div class="overflow-x-auto">
@@ -18,7 +24,7 @@
       <tbody>
         {% for candidate in candidates %}
         <tr class="hover">
-          <td><a href="{{ candidate.get_absolute_url }}" class="link link-hover font-medium">{{ candidate.full_name }}</a></td>
+          <td><a href="{{ candidate.get_absolute_url }}" class="link link-hover font-medium" data-candidate-row="{{ candidate.pk }}">{{ candidate.full_name }}</a>{% if candidate.archived %} <span class="badge badge-neutral badge-sm ml-1" data-archived-badge>Archived</span>{% endif %}</td>
           <td>{{ candidate.email }}</td>
           <td>{{ candidate.phone|default:"—" }}</td>
           <td>{{ candidate.created_at|date:"M j, Y" }}</td>

@@ -74,9 +74,14 @@ def update_candidate(candidate, **fields):
     return candidate
 
 
-def search_candidates(query=""):
-    """Candidates whose first name, last name, or email contains ``query`` (any case)."""
+def search_candidates(query="", include_archived=False):
+    """Candidates whose first name, last name, or email contains ``query`` (any case).
+
+    Archived candidates are left out unless ``include_archived`` is true.
+    """
     candidates = Candidate.objects.all()
+    if not include_archived:
+        candidates = candidates.filter(archived=False)
     query = query.strip()
     if query:
         candidates = candidates.filter(
@@ -85,6 +90,70 @@ def search_candidates(query=""):
             | Q(email__icontains=query)
         )
     return candidates
+
+
+class CandidateHasApplicationsInProgress(ValidationError):
+    """The candidate can't be archived while any of their applications is in progress."""
+
+    def __init__(self, candidate, in_progress_count):
+        self.candidate = candidate
+        self.in_progress_count = in_progress_count
+        noun = "application is" if in_progress_count == 1 else "applications are"
+        super().__init__(
+            f"{candidate.full_name} can't be archived while {in_progress_count} {noun} "
+            "still in progress.",
+            code="applications_in_progress",
+        )
+
+
+class CandidateHasApplications(ValidationError):
+    """The candidate can't be deleted because they have applications."""
+
+    def __init__(self, candidate, application_count):
+        self.candidate = candidate
+        self.application_count = application_count
+        noun = "application" if application_count == 1 else "applications"
+        super().__init__(
+            f"{candidate.full_name} can't be deleted because they have {application_count} "
+            f"{noun}. Archive them instead.",
+            code="candidate_has_applications",
+        )
+
+
+@transaction.atomic
+def archive_candidate(candidate):
+    """Archive ``candidate``, hiding them from day-to-day lists but keeping their history.
+
+    Refused with CandidateHasApplicationsInProgress while any of their
+    applications is at an in-progress stage.
+    """
+    in_progress_count = candidate.applications.filter(stage__in=IN_PROGRESS_STAGES).count()
+    if in_progress_count:
+        raise CandidateHasApplicationsInProgress(candidate, in_progress_count)
+    candidate.archived = True
+    candidate.save(update_fields=["archived", "updated_at"])
+    return candidate
+
+
+@transaction.atomic
+def unarchive_candidate(candidate):
+    """Unarchive ``candidate``, so they show in lists and can apply again."""
+    candidate.archived = False
+    candidate.save(update_fields=["archived", "updated_at"])
+    return candidate
+
+
+@transaction.atomic
+def delete_candidate(candidate):
+    """Permanently delete ``candidate``, for records created by mistake.
+
+    Refused with CandidateHasApplications (which suggests archiving) if they
+    have any applications at all; the database's PROTECT backs this up.
+    """
+    application_count = candidate.applications.count()
+    if application_count:
+        raise CandidateHasApplications(candidate, application_count)
+    candidate.delete()
 
 
 class DuplicateSkillName(ValidationError):
@@ -215,8 +284,27 @@ class DuplicateApplication(ValidationError):
         )
 
 
+APPLY_REFUSAL = "they can't receive new applications"
+
+
+class CandidateArchived(ValidationError):
+    """The candidate is archived, so they can't apply or have an application reopened.
+
+    ``consequence`` finishes the message for the action that was refused.
+    """
+
+    def __init__(self, candidate, consequence="this application can't be reopened"):
+        self.candidate = candidate
+        super().__init__(
+            f"{candidate.full_name} is archived, so {consequence}.",
+            code="candidate_archived",
+        )
+
+
 def jobs_open_to(candidate):
-    """Open job openings that ``candidate`` hasn't applied to yet."""
+    """Open job openings that ``candidate`` hasn't applied to yet (none if they're archived)."""
+    if candidate.archived:
+        return JobOpening.objects.none()
     return JobOpening.objects.filter(status=JobStatus.OPEN).exclude(
         applications__candidate=candidate
     )
@@ -226,9 +314,12 @@ def jobs_open_to(candidate):
 def create_application(candidate, job, source, source_details=""):
     """Record ``candidate``'s application to ``job``, starting at Applied.
 
-    Refused with JobClosedToApplicants if the job is Closed, and with
-    DuplicateApplication if the candidate has already applied to it.
+    Refused with CandidateArchived if the candidate is archived, with
+    JobClosedToApplicants if the job is Closed, and with DuplicateApplication
+    if the candidate has already applied to it.
     """
+    if candidate.archived:
+        raise CandidateArchived(candidate, APPLY_REFUSAL)
     if not job.is_open:
         raise JobClosedToApplicants(job)
     existing = candidate.applications.filter(job=job).first()
@@ -277,17 +368,6 @@ class InvalidStageMove(ValidationError):
             f"Can't move this application from {application.get_stage_display()} "
             f"to {Stage(to_stage).label if to_stage in Stage.values else to_stage}.",
             code="invalid_stage_move",
-        )
-
-
-class CandidateArchived(ValidationError):
-    """The candidate is archived, so their application can't be reopened."""
-
-    def __init__(self, candidate):
-        self.candidate = candidate
-        super().__init__(
-            f"{candidate.full_name} is archived, so this application can't be reopened.",
-            code="candidate_archived",
         )
 
 

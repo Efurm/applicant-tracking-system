@@ -4,6 +4,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import escape
 
 from tracker import services
 from tracker.models import Application, ApplicationSource, Candidate, JobOpening, Stage
@@ -155,3 +156,38 @@ def test_the_apply_page_requires_login(client, candidate):
 
     assert response.status_code == 302
     assert response.url.startswith(reverse("login"))
+
+
+def test_create_application_refuses_an_archived_candidate(archived_candidate, open_job):
+    with pytest.raises(services.CandidateArchived) as refused:
+        services.create_application(archived_candidate, open_job, ApplicationSource.JOB_BOARD)
+
+    assert refused.value.candidate == archived_candidate
+    assert refused.value.message == (
+        f"{archived_candidate.full_name} is archived, so they can't receive new applications."
+    )
+    assert not Application.objects.filter(candidate=archived_candidate).exists()
+
+
+def test_an_archived_candidate_is_offered_no_jobs(archived_candidate, open_job):
+    assert list(services.jobs_open_to(archived_candidate)) == []
+
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_the_apply_page_turns_an_archived_candidate_away_without_saving(
+    staff_client, archived_candidate, open_job, method
+):
+    response = getattr(staff_client, method)(
+        reverse("tracker:candidate_apply", args=[archived_candidate.pk]),
+        {"job": open_job.pk, "source": ApplicationSource.REFERRAL} if method == "post" else {},
+        follow=True,
+    )
+
+    assert response.redirect_chain == [(archived_candidate.get_absolute_url(), 302)]
+    assert (
+        escape(
+            f"{archived_candidate.full_name} is archived, so they can't receive new applications."
+        )
+        in response.content.decode()
+    )
+    assert not Application.objects.filter(candidate=archived_candidate).exists()

@@ -75,8 +75,7 @@ def test_reopening_is_refused_while_the_candidate_is_archived(
     final_stage, admin_user, candidate, make_application
 ):
     application = make_application(final_stage)
-    candidate.archived = True
-    candidate.save(update_fields=["archived"])
+    services.archive_candidate(candidate)
     changes_before = list(StageChange.objects.values_list("pk", flat=True))
 
     with pytest.raises(services.CandidateArchived) as refusal:
@@ -230,8 +229,7 @@ def test_an_htmx_reopen_for_an_archived_candidate_is_refused_in_place(
     admin_client, candidate, make_application
 ):
     application = make_application(Stage.REJECTED)
-    candidate.archived = True
-    candidate.save(update_fields=["archived"])
+    services.archive_candidate(candidate)
     changes_before = list(StageChange.objects.values_list("pk", flat=True))
 
     response = _move(admin_client, application, Stage.SCREENING)
@@ -517,3 +515,20 @@ def test_a_move_without_htmx_saves_the_posted_note(staff_client, make_applicatio
 
     assert response.status_code == 302
     assert application.stage_changes.last().note == "Role filled internally"
+
+
+def test_admins_see_no_reopen_buttons_for_an_archived_candidate_and_are_told_why(
+    admin_client, candidate, make_application
+):
+    application = make_application(Stage.REJECTED)
+    services.archive_candidate(candidate)
+
+    response = admin_client.get(WORKSPACE_URL, {"stage": "all", "selected": application.pk})
+
+    assert marked(response, "data-reopen-to") == []
+    assert marked(response, "data-move-form") == []
+    [(_, _, message)] = marked(response, "data-final-message")
+    assert message == (
+        "This application ended as Rejected. "
+        "The candidate is archived, so it can't be reopened until they're unarchived."
+    )

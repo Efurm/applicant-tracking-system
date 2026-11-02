@@ -30,6 +30,35 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 12: archiving and deleting candidates (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 12`
+2. `yes, go ahead` (the three TDD behaviors: archive refused while in progress, delete refused with applications, `create_application` refuses archived candidates)
+3. `yes implement it to pass` (behavior 1)
+4. `yes, move on to cycle 2`
+5. `yes implement it to pass` (behavior 2)
+6. `yes move on to cycle 3`
+7. `yes impmlement it to pass` (behavior 3, including the "they can't receive new applications" wording)
+8. `yes, go ahead with the rest of the phase`
+
+### Summary
+- **Outcome:** Admins can archive, unarchive, and delete candidates. Archived candidates are hidden from the list by default and can't receive new applications.
+  - **Services:** `archive_candidate` raises `CandidateHasApplicationsInProgress` while any application is in progress. `unarchive_candidate` clears the flag. Both save only `archived` and `updated_at`. `delete_candidate` raises `CandidateHasApplications` (its message ends "Archive them instead.") whenever any application exists. `create_application` raises `CandidateArchived` first. The class now takes an optional `consequence`, so it reads "…so they can't receive new applications" here and keeps the reopen wording by default. `jobs_open_to` returns nothing for an archived candidate, and `search_candidates` takes `include_archived`.
+  - **Views and templates:**
+    - Admin-only `@require_POST` actions `candidate_archive`, `candidate_unarchive`, and `candidate_delete`, triggered by inline forms on the candidate page (Archive and Delete have `confirm()` prompts). A successful delete redirects to the list.
+    - The candidate page shows an Archived badge and message and hides "Apply to a job" while archived. The apply view flashes and redirects an archived candidate.
+    - The list has a "Show archived" checkbox (`?archived=1`) with badges, and it now includes the messages partial.
+    - The workspace panel hides Admin reopen buttons for an archived candidate and says why.
+  - **Tests:** 199 pass (up from 168). They cover each service rule, Staff refusals (403 on GET and POST) and POST-only actions, button visibility for both roles, the Admin flows with their messages, the list toggle with search, the apply page and form for archived candidates, and the panel. A new `archived_candidate` fixture was added, and the two Phase 11 tests in `test_moves.py` now archive through the service. CLAUDE.md was updated, with Phase 13 listed as next.
+- **Deviations:** None. The user approved each TDD step as proposed, including the apply-refusal wording.
+- **Sideways:**
+  - The agent twice left a stray `... if False else None` line in a test it was writing. Both were removed before the tests were run or shown.
+  - The first version of the `confirm()` prompts contained a bare apostrophe inside a JavaScript string, which would have broken the prompt. They were reworded to "cannot".
+  - The Admin delete test failed at first because the candidate list didn't include `_messages.html`, so the "Deleted" flash never showed. This was a real gap, fixed in the template.
+
+---
+
 ## 2026-11-02 — Implemented Phase 11: Admin reopen of final applications (TDD)
 
 ### Prompts

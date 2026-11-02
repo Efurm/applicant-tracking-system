@@ -49,6 +49,15 @@ def candidate(db):
 
 
 @pytest.fixture
+def archived_candidate(db):
+    """A candidate with no applications, archived through the archive service."""
+    candidate = Candidate.objects.create(
+        first_name="Kim", last_name="Lee", email="kim.lee@example.com"
+    )
+    return services.archive_candidate(candidate)
+
+
+@pytest.fixture
 def open_job(db):
     return JobOpening.objects.create(
         title="Backend Developer", department="Engineering", description="Build APIs."
