@@ -25,7 +25,10 @@
           <td>{{ job.department }}</td>
           <td>{{ job.location|default:"—" }}</td>
           <td>{{ job.get_employment_type_display }}</td>
-          <td><span class="badge {% if job.is_open %}badge-success{% else %}badge-ghost{% endif %}">{{ job.get_status_display }}</span></td>
+          <td>
+            <span class="badge {% if job.is_open %}badge-success{% else %}badge-ghost{% endif %}">{{ job.get_status_display }}</span>
+            {% if not job.is_open %}<div class="text-xs opacity-70 mt-1">Closed to new applicants</div>{% endif %}
+          </td>
         </tr>
         {% empty %}
         <tr><td colspan="5" class="text-center opacity-70">No job openings{% if status %} with this status{% endif %}.</td></tr>

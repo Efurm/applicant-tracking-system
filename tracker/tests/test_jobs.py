@@ -1,6 +1,8 @@
 import pytest
 from django.urls import reverse
+from django.utils.html import escape
 
+from tracker import services
 from tracker.models import EmploymentType, JobOpening, JobStatus, Skill
 
 
@@ -213,3 +215,118 @@ def test_nav_job_openings_link_points_to_the_job_list(staff_client):
     page = staff_client.get(reverse("tracker:home")).content.decode()
 
     assert f'href="{reverse("tracker:job_list")}">Job Openings</a>' in page
+
+
+def test_admin_closes_an_open_job_and_reopens_it(admin_client, open_job):
+    close_url = reverse("tracker:job_close", args=[open_job.pk])
+    reopen_url = reverse("tracker:job_reopen", args=[open_job.pk])
+
+    response = admin_client.post(close_url, follow=True)
+
+    open_job.refresh_from_db()
+    assert open_job.status == JobStatus.CLOSED
+    assert response.redirect_chain == [(open_job.get_absolute_url(), 302)]
+    assert escape('Closed "Backend Developer" to new applicants.') in response.content.decode()
+
+    response = admin_client.post(reopen_url, follow=True)
+
+    open_job.refresh_from_db()
+    assert open_job.status == JobStatus.OPEN
+    assert response.redirect_chain == [(open_job.get_absolute_url(), 302)]
+    assert escape('Reopened "Backend Developer".') in response.content.decode()
+
+
+def test_closed_jobs_are_labeled_closed_to_new_applicants(staff_client, open_job, closed_job):
+    label = "Closed to new applicants"
+    list_page = staff_client.get(reverse("tracker:job_list")).content.decode()
+    closed_page = staff_client.get(closed_job.get_absolute_url()).content.decode()
+    open_page = staff_client.get(open_job.get_absolute_url()).content.decode()
+
+    assert list_page.count(label) == 1
+    assert list_page.index("Data Analyst") < list_page.index(label)
+    assert label in closed_page
+    assert label not in open_page
+
+
+def test_close_and_reopen_services_change_only_the_status(open_job):
+    python = Skill.objects.create(name="Python")
+    open_job.skills.add(python)
+
+    services.close_job(open_job)
+    open_job.refresh_from_db()
+    assert open_job.status == JobStatus.CLOSED
+    assert not open_job.is_open
+
+    services.reopen_job(open_job)
+    open_job.refresh_from_db()
+    assert open_job.status == JobStatus.OPEN
+    assert (open_job.title, open_job.department) == ("Backend Developer", "Engineering")
+    assert list(open_job.skills.all()) == [python]
+
+
+def test_closing_a_closed_job_or_reopening_an_open_one_is_harmless(open_job, closed_job):
+    services.close_job(closed_job)
+    services.reopen_job(open_job)
+
+    closed_job.refresh_from_db()
+    open_job.refresh_from_db()
+    assert closed_job.status == JobStatus.CLOSED
+    assert open_job.status == JobStatus.OPEN
+
+
+def test_staff_are_refused_on_close_and_reopen(staff_client, open_job, closed_job):
+    close_url = reverse("tracker:job_close", args=[open_job.pk])
+    reopen_url = reverse("tracker:job_reopen", args=[closed_job.pk])
+
+    assert staff_client.post(close_url).status_code == 403
+    assert staff_client.post(reopen_url).status_code == 403
+    assert staff_client.get(close_url).status_code == 403
+    assert staff_client.get(reopen_url).status_code == 403
+
+    open_job.refresh_from_db()
+    closed_job.refresh_from_db()
+    assert open_job.status == JobStatus.OPEN
+    assert closed_job.status == JobStatus.CLOSED
+
+
+def test_close_and_reopen_refuse_get_for_admins(admin_client, open_job, closed_job):
+    assert admin_client.get(reverse("tracker:job_close", args=[open_job.pk])).status_code == 405
+    assert admin_client.get(reverse("tracker:job_reopen", args=[closed_job.pk])).status_code == 405
+
+    open_job.refresh_from_db()
+    assert open_job.status == JobStatus.OPEN
+
+
+def test_close_and_reopen_require_login(client, open_job):
+    for name in ["tracker:job_close", "tracker:job_reopen"]:
+        url = reverse(name, args=[open_job.pk])
+        response = client.post(url)
+        assert response.status_code == 302, url
+        assert response.url == f"{reverse('login')}?next={url}"
+    open_job.refresh_from_db()
+    assert open_job.status == JobStatus.OPEN
+
+
+def test_close_and_reopen_of_a_missing_job_is_404(admin_client, db):
+    assert admin_client.post(reverse("tracker:job_close", args=[999])).status_code == 404
+    assert admin_client.post(reverse("tracker:job_reopen", args=[999])).status_code == 404
+
+
+def test_admin_sees_close_on_open_jobs_and_reopen_on_closed_jobs(
+    admin_client, open_job, closed_job
+):
+    open_page = admin_client.get(open_job.get_absolute_url()).content.decode()
+    closed_page = admin_client.get(closed_job.get_absolute_url()).content.decode()
+
+    assert reverse("tracker:job_close", args=[open_job.pk]) in open_page
+    assert reverse("tracker:job_reopen", args=[open_job.pk]) not in open_page
+    assert reverse("tracker:job_reopen", args=[closed_job.pk]) in closed_page
+    assert reverse("tracker:job_close", args=[closed_job.pk]) not in closed_page
+
+
+def test_staff_see_no_close_or_reopen_controls(staff_client, open_job, closed_job):
+    open_page = staff_client.get(open_job.get_absolute_url()).content.decode()
+    closed_page = staff_client.get(closed_job.get_absolute_url()).content.decode()
+
+    assert reverse("tracker:job_close", args=[open_job.pk]) not in open_page
+    assert reverse("tracker:job_reopen", args=[closed_job.pk]) not in closed_page

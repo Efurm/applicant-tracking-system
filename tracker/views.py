@@ -122,3 +122,21 @@ def job_edit(request, pk):
         messages.success(request, f'Saved changes to "{job.title}".')
         return redirect(job)
     return render(request, "tracker/jobs/form.html", {"form": form, "job": job})
+
+
+@admin_required
+@require_POST
+def job_close(request, pk):
+    job = get_object_or_404(JobOpening, pk=pk)
+    services.close_job(job)
+    messages.success(request, f'Closed "{job.title}" to new applicants.')
+    return redirect(job)
+
+
+@admin_required
+@require_POST
+def job_reopen(request, pk):
+    job = get_object_or_404(JobOpening, pk=pk)
+    services.reopen_job(job)
+    messages.success(request, f'Reopened "{job.title}".')
+    return redirect(job)

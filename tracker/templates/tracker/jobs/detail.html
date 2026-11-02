@@ -20,9 +20,26 @@
           <span class="badge {% if job.is_open %}badge-success{% else %}badge-ghost{% endif %}">{{ job.get_status_display }}</span>
           {% if user.is_admin %}
           <a href="{% url 'tracker:job_edit' job.pk %}" class="btn btn-sm btn-outline">Edit</a>
+          {% if job.is_open %}
+          <form method="post" action="{% url 'tracker:job_close' job.pk %}"
+                onsubmit="return confirm('Close &quot;{{ job.title|escapejs }}&quot;? It will stop accepting new applications; applicants in progress keep moving.');">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline btn-warning">Close job</button>
+          </form>
+          {% else %}
+          <form method="post" action="{% url 'tracker:job_reopen' job.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-sm btn-outline btn-success">Reopen job</button>
+          </form>
+          {% endif %}
           {% endif %}
         </div>
       </div>
+      {% if not job.is_open %}
+      <div role="alert" class="alert alert-warning alert-soft mt-4">
+        <span><strong>Closed to new applicants.</strong> Applicants already in progress keep moving through the pipeline.</span>
+      </div>
+      {% endif %}
       <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3 mt-4 text-sm">
         <dt class="font-semibold">Employment type</dt>
         <dd class="sm:col-span-2">{{ job.get_employment_type_display }}</dd>

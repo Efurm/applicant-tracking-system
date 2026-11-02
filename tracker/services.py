@@ -164,3 +164,19 @@ def update_job(job, skills=None, **fields):
     if skills is not None:
         job.skills.set(skills)
     return job
+
+
+@transaction.atomic
+def close_job(job):
+    """Close ``job`` to new applicants. Always allowed; existing applications are untouched."""
+    job.status = JobStatus.CLOSED
+    job.save(update_fields=["status", "updated_at"])
+    return job
+
+
+@transaction.atomic
+def reopen_job(job):
+    """Reopen ``job`` to new applicants. Existing applications are untouched."""
+    job.status = JobStatus.OPEN
+    job.save(update_fields=["status", "updated_at"])
+    return job

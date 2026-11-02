@@ -30,6 +30,21 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 5: closing and reopening jobs (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 5`
+2. `yes` (the two TDD behaviors: an Admin closes and reopens a job from its page, and closed jobs are labeled "Closed to new applicants")
+3. `i approve` (RED test for behavior 1)
+4. `yes` (move on to behavior 2)
+5. `i approve` (RED test for behavior 2)
+6. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** New services `close_job` and `reopen_job` set a job's status and save only `status` and `updated_at`. Closing is always allowed, and neither service touches other fields or skills. Admin-only, POST-only `job_close` and `job_reopen` views at `/jobs/<pk>/close/` and `/jobs/<pk>/reopen/` flash a message and redirect to the job page. The job page shows Admins a "Close job" button with a confirmation on open jobs, and a "Reopen job" button on closed jobs. Closed jobs read "Closed to new applicants" under their status badge on the list, and in an alert on the detail page that also says applicants in progress keep moving. There are 74 passing tests, 10 of them new; 2 behaviors were driven by TDD. CLAUDE.md's status and inventory were updated.
+- **Deviations:** The agent proposed only two TDD behaviors instead of three, because Staff refusal is handled by the existing `@admin_required` pattern; it was tested normally instead. Both behaviors and both RED tests were approved unchanged. The `open_job` and `closed_job` fixtures already existed in `test_jobs.py` from Phase 4, and, per CLAUDE.md, they stay there until Phase 6 needs them in a second module. The CLAUDE.md edits that were already uncommitted at the start of the session were committed along with this phase.
+- **Sideways:** Nothing broke. To make test 1 fail on an assertion rather than `NoReverseMatch`, the agent first added the URLs and placeholder views that redirected without changing anything. The open-job confirmation text was worded so that it doesn't contain "Closed to new applicants", which would have broken test 2's check that open jobs lack the label.
+
 ## 2026-11-02 — Implemented Phase 4: job openings with skills (TDD)
 
 ### Prompts
