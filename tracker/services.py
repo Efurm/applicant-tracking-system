@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from .models import (
+    FINAL_STAGES,
     IN_PROGRESS_STAGES,
     PIPELINE_STAGES,
     Application,
@@ -279,16 +280,27 @@ class InvalidStageMove(ValidationError):
         )
 
 
+class CandidateArchived(ValidationError):
+    """The candidate is archived, so their application can't be reopened."""
+
+    def __init__(self, candidate):
+        self.candidate = candidate
+        super().__init__(
+            f"{candidate.full_name} is archived, so this application can't be reopened.",
+            code="candidate_archived",
+        )
+
+
 def allowed_next_stages(stage, user):
     """The stages an application at ``stage`` may move to when ``user`` moves it.
 
     This one rule drives both the move buttons and the move service's
     validation. From an in-progress stage: any later pipeline stage (skipping
-    allowed), then Rejected or Withdrawn. Final stages offer nothing. ``user``
-    is unused until Admin reopens arrive.
+    allowed), then Rejected or Withdrawn. Final stages are locked, except that
+    an Admin may reopen them to any in-progress stage.
     """
     if stage not in IN_PROGRESS_STAGES:
-        return ()
+        return IN_PROGRESS_STAGES if user.is_admin else ()
     return PIPELINE_STAGES[PIPELINE_STAGES.index(stage) + 1 :] + ENDING_STAGES
 
 
@@ -301,12 +313,18 @@ def move_application(application, to_stage, user, note=""):
     Every stage change goes through here. The move must be one of
     ``allowed_next_stages`` for the application's current stage (read fresh
     from the database), otherwise InvalidStageMove is raised and nothing
-    changes. Moves work the same on closed jobs.
+    changes. An Admin reopen (a move out of a final stage) is refused with
+    CandidateArchived while the candidate is archived. Moves, reopens
+    included, work the same on closed jobs.
     """
     current = Application.objects.select_for_update().values_list("stage", flat=True)
     application.stage = current.get(pk=application.pk)
     if to_stage not in allowed_next_stages(application.stage, user):
         raise InvalidStageMove(application, to_stage)
+    if application.stage in FINAL_STAGES:
+        application.candidate.refresh_from_db(fields=["archived"])
+        if application.candidate.archived:
+            raise CandidateArchived(application.candidate)
     from_stage = application.stage
     application.stage = to_stage
     application.save(update_fields=["stage", "updated_at"])

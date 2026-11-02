@@ -41,11 +41,15 @@ def test_allowed_next_stages_offers_later_stages_and_endings_then_locks_final_st
     assert list(services.allowed_next_stages(stage, staff_user)) == expected
 
 
-@pytest.mark.parametrize("stage", IN_PROGRESS_STAGES)
-def test_admins_get_the_same_moves_as_staff_from_in_progress_stages(stage, admin_user, staff_user):
-    assert list(services.allowed_next_stages(stage, admin_user)) == list(
-        services.allowed_next_stages(stage, staff_user)
-    )
+@pytest.mark.parametrize("stage", list(Stage))
+def test_admins_get_staff_moves_from_in_progress_stages_and_can_reopen_final_ones(
+    stage, admin_user, staff_user
+):
+    if stage in FINAL_STAGES:
+        expected = list(IN_PROGRESS_STAGES)
+    else:
+        expected = list(services.allowed_next_stages(stage, staff_user))
+    assert list(services.allowed_next_stages(stage, admin_user)) == expected
 
 
 def test_move_application_updates_the_stage_and_records_who_moved_it_even_on_a_closed_job(
@@ -64,6 +68,24 @@ def test_move_application_updates_the_stage_and_records_who_moved_it_even_on_a_c
         Stage.FINAL_REVIEW,
         staff_user,
     )
+
+
+@pytest.mark.parametrize("final_stage", FINAL_STAGES)
+def test_reopening_is_refused_while_the_candidate_is_archived(
+    final_stage, admin_user, candidate, make_application
+):
+    application = make_application(final_stage)
+    candidate.archived = True
+    candidate.save(update_fields=["archived"])
+    changes_before = list(StageChange.objects.values_list("pk", flat=True))
+
+    with pytest.raises(services.CandidateArchived) as refusal:
+        services.move_application(application, Stage.SCREENING, admin_user)
+
+    assert refusal.value.candidate == candidate
+    application.refresh_from_db()
+    assert application.stage == final_stage
+    assert list(StageChange.objects.values_list("pk", flat=True)) == changes_before
 
 
 def test_move_application_stores_an_optional_note_on_the_stage_change(staff_user, make_application):
@@ -204,6 +226,24 @@ def test_a_direct_post_out_of_a_final_stage_is_refused_without_changing_data(
     assert list(StageChange.objects.values_list("pk", flat=True)) == changes_before
 
 
+def test_an_htmx_reopen_for_an_archived_candidate_is_refused_in_place(
+    admin_client, candidate, make_application
+):
+    application = make_application(Stage.REJECTED)
+    candidate.archived = True
+    candidate.save(update_fields=["archived"])
+    changes_before = list(StageChange.objects.values_list("pk", flat=True))
+
+    response = _move(admin_client, application, Stage.SCREENING)
+
+    assert response.status_code == 200
+    [(_, _, error)] = marked(response, "data-move-error")
+    assert error == f"{candidate.full_name} is archived, so this application can't be reopened."
+    application.refresh_from_db()
+    assert application.stage == Stage.REJECTED
+    assert list(StageChange.objects.values_list("pk", flat=True)) == changes_before
+
+
 def test_the_panel_offers_one_move_button_per_allowed_stage(staff_client, make_application):
     application = make_application(Stage.INTERVIEW)
 
@@ -244,6 +284,35 @@ def test_the_panel_offers_reject_and_withdraw_while_in_progress_and_final_messag
     assert message == (
         f"This application ended as {Stage(final_stage).label}. It is final, so it can't be moved."
     )
+
+
+@pytest.mark.parametrize("final_stage", FINAL_STAGES)
+def test_admins_get_reopen_buttons_with_a_note_on_final_applications_and_staff_do_not(
+    final_stage, client, admin_user, staff_user, make_application
+):
+    application = make_application(final_stage)
+    params = {"selected": application.pk, "stage": "all"}
+
+    client.force_login(admin_user)
+    response = client.get(WORKSPACE_URL, params)
+    reopens = marked(response, "data-reopen-to")
+    assert [value for value, _, _ in reopens] == list(IN_PROGRESS_STAGES)
+    assert all(attrs["name"] == "stage" and attrs["value"] == value for value, attrs, _ in reopens)
+    assert marked(response, "data-move-form")
+    assert marked(response, "data-move-note")
+    assert marked(response, "data-move-to") == []
+    assert marked(response, "data-end-to") == []
+    [(_, _, message)] = marked(response, "data-final-message")
+    assert message == (
+        f"This application ended as {Stage(final_stage).label}. "
+        "As an Admin, you can reopen it to an in-progress stage."
+    )
+
+    client.force_login(staff_user)
+    response = client.get(WORKSPACE_URL, params)
+    assert marked(response, "data-reopen-to") == []
+    assert marked(response, "data-move-form") == []
+    assert marked(response, "data-final-message")
 
 
 def test_the_workspace_page_loads_htmx(staff_client):
@@ -392,6 +461,38 @@ def test_an_htmx_move_saves_the_posted_note_and_returns_the_timeline_with_the_ne
     assert value == str(change.pk)
     assert "Screening → Offer" in text
     assert "Fast-tracked after a referral" in text
+
+
+def test_an_admin_htmx_reopen_on_a_closed_job_records_the_change_and_shows_it_in_the_timeline(
+    admin_client, admin_user, make_application
+):
+    application = make_application(Stage.REJECTED)
+    services.close_job(application.job)
+    url = reverse("tracker:application_move", args=[application.pk])
+
+    response = admin_client.post(
+        url,
+        {"stage": Stage.INTERVIEW, "note": "Rejected by mistake"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert marked(response, "data-move-error") == []
+    application.refresh_from_db()
+    assert application.stage == Stage.INTERVIEW
+    change = application.stage_changes.last()
+    assert (change.from_stage, change.to_stage, change.changed_by, change.note) == (
+        Stage.REJECTED,
+        Stage.INTERVIEW,
+        admin_user,
+        "Rejected by mistake",
+    )
+    value, _, text = marked(response, "data-timeline-entry")[-1]
+    assert value == str(change.pk)
+    assert "Rejected → Interview" in text
+    assert "Rejected by mistake" in text
+    [(_, _, row_text)] = marked(response, "data-application-row")
+    assert "Interview" in row_text
+    assert marked(response, "data-final-message") == []
 
 
 def test_the_move_form_has_one_optional_note_field_shared_by_every_move_button(

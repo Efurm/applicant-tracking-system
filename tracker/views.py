@@ -184,11 +184,13 @@ def _workspace_filters(request):
 def _panel_context(request, application, filter_query, move_error=None):
     """What the detail panel (and its list row) need to render ``application``.
 
-    The allowed moves are split into forward moves and endings (Reject and
-    Withdraw), which the panel draws as separate controls. ``stage_changes``
-    feeds the stage-history timeline.
+    The allowed moves are split into forward moves, endings (Reject and
+    Withdraw), and Admin reopens (any move out of a final stage), which the
+    panel draws as separate controls. ``stage_changes`` feeds the
+    stage-history timeline.
     """
     allowed = services.allowed_next_stages(application.stage, request.user)
+    reopening = application.is_final
     return {
         "application": application,
         "selected": application,
@@ -197,8 +199,11 @@ def _panel_context(request, application, filter_query, move_error=None):
             pk=application.pk
         ).select_related("job"),
         "allowed_moves": allowed,
-        "forward_moves": [s for s in allowed if s not in services.ENDING_STAGES],
-        "ending_moves": [s for s in allowed if s in services.ENDING_STAGES],
+        "forward_moves": []
+        if reopening
+        else [s for s in allowed if s not in services.ENDING_STAGES],
+        "ending_moves": [] if reopening else [s for s in allowed if s in services.ENDING_STAGES],
+        "reopen_moves": list(allowed) if reopening else [],
         "stage_changes": application.stage_changes.select_related("changed_by"),
         "move_error": move_error,
     }
@@ -247,7 +252,7 @@ def application_move(request, pk):
         services.move_application(
             application, to_stage, request.user, note=request.POST.get("note", "")
         )
-    except services.InvalidStageMove as error:
+    except (services.InvalidStageMove, services.CandidateArchived) as error:
         move_error = error.message
         application.refresh_from_db()
 

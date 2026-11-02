@@ -38,7 +38,7 @@
     {% endfor %}
   </ul>
   {% if application.is_final %}
-  <div role="status" class="alert alert-soft mt-4 text-sm" data-final-message>This application ended as <strong>{{ application.get_stage_display }}</strong>. It is final, so it can't be moved.</div>
+  <div role="status" class="alert alert-soft mt-4 text-sm" data-final-message>This application ended as <strong>{{ application.get_stage_display }}</strong>. {% if reopen_moves %}As an Admin, you can reopen it to an in-progress stage.{% else %}It is final, so it can't be moved.{% endif %}</div>
   {% endif %}
 
   {% if move_error %}
@@ -74,6 +74,14 @@
               class="btn btn-sm {% if next_stage == 'rejected' %}btn-error{% else %}btn-warning{% endif %} btn-outline"
               onclick="return confirm('Mark {{ candidate.full_name|escapejs }} as {{ next_stage.label }} for this job? Staff can\'t undo this.')"
               data-end-to="{{ next_stage.value }}">{% if next_stage == 'rejected' %}Reject{% else %}Withdraw{% endif %}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if reopen_moves %}
+    <div class="text-sm font-semibold mb-2">Reopen to</div>
+    <div class="flex flex-wrap gap-2">
+      {% for next_stage in reopen_moves %}
+      <button type="submit" name="stage" value="{{ next_stage.value }}" class="btn btn-sm btn-outline btn-secondary" data-reopen-to="{{ next_stage.value }}">{{ next_stage.label }}</button>
       {% endfor %}
     </div>
     {% endif %}

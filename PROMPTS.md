@@ -30,6 +30,38 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 11: Admin reopen of final applications (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 11`
+2. `approved, do the archival refusal in phase 11` (the three TDD behaviors, plus where the archived-candidate reopen refusal belongs)
+3. `go ahead` (RED test for behavior 1)
+4. `go ahead` (move on to behavior 2)
+5. `go ahead` (RED test for behavior 2)
+6. `go ahead` (move on to behavior 3)
+7. `go ahead` (RED test for behavior 3, including the Admin final-message wording)
+8. `go ahed` (implement behavior 3)
+9. `go ahead` (end-to-end reopen test, then finish the phase)
+
+### Summary
+- **Outcome:** Admins can reopen Hired, Rejected, and Withdrawn applications to any in-progress stage. Staff still can't.
+  - **Service:** `allowed_next_stages(stage, user)` returns `IN_PROGRESS_STAGES` from a final stage when `user.is_admin`, and nothing for Staff. `move_application` raises the new `CandidateArchived` (which carries `.candidate`) when a move out of a final stage meets an archived candidate. It re-reads `archived` from the database and changes nothing. Reopens on closed jobs work like any other move.
+  - **View:** `application_move` catches `CandidateArchived` as well as `InvalidStageMove`, so the refusal renders in place (HTMX) or is flashed (no HTMX). `_panel_context` adds `reopen_moves` (every allowed move from a final stage). For final applications, `forward_moves` and `ending_moves` stay empty.
+  - **Panel:** for Admins, final applications render the move form with its note field and a "Reopen to" group of `data-reopen-to` buttons. The final message there reads "As an Admin, you can reopen it to an in-progress stage." Staff keep "It is final, so it can't be moved." and get no form. Reopens get a timeline entry through the existing `StageChange` path.
+  - **Tests:** 168 pass (up from 157). New tests cover:
+    - Admin allowed-next-stages for every stage
+    - the archived-candidate refusal in the service (all final stages) and over HTMX
+    - Admin reopen buttons versus Staff final messaging (all final stages)
+    - an Admin HTMX reopen with a note on a closed job, recorded as a `StageChange` and shown in the timeline and list row
+  - CLAUDE.md's status, inventory, and test hooks were updated, and Phase 12 is listed as next.
+- **Deviations:** The plan put the archived-candidate reopen refusal in Phase 11, but CLAUDE.md's notes deferred it to Phase 12. The agent recommended doing it now, and the user agreed. The user accepted the proposed Admin final-message wording without changes.
+- **Sideways:**
+  - Behavior 3's test first asked for both `admin_client` and `staff_client`. They share pytest-django's single `client`, so both were logged in as Staff, and the test stayed red after the code was written. The fix was a mechanical repair: one `client` is logged in as each role in turn. The original RED was still a real failure, since no `data-reopen-to` markup existed yet, though for a slightly different reason than first reported.
+  - The first view test for the archived refusal compared against `escape(...)`, but `marked()` already unescapes text. It was a one-line mechanical fix.
+  - A `sed` attempt to add an import didn't match across lines and changed nothing. The import was added with Edit instead.
+
+---
+
 ## 2026-11-02 — Implemented Phase 10: move notes and the stage-history timeline (TDD)
 
 ### Prompts
