@@ -17,6 +17,7 @@ urlpatterns = [
     path("jobs/<int:pk>/edit/", views.job_edit, name="job_edit"),
     path("jobs/<int:pk>/close/", views.job_close, name="job_close"),
     path("jobs/<int:pk>/reopen/", views.job_reopen, name="job_reopen"),
+    path("applications/", views.application_workspace, name="application_workspace"),
     path("skills/", views.skill_list, name="skill_list"),
     path("skills/new/", views.skill_create, name="skill_create"),
     path("skills/<int:pk>/edit/", views.skill_edit, name="skill_edit"),

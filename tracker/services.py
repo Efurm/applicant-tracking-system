@@ -9,7 +9,15 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 
-from .models import Application, Candidate, JobOpening, JobStatus, Skill
+from .models import (
+    IN_PROGRESS_STAGES,
+    Application,
+    Candidate,
+    JobOpening,
+    JobStatus,
+    Skill,
+    Stage,
+)
 
 CANDIDATE_FIELDS = (
     "first_name",
@@ -226,3 +234,28 @@ def create_application(candidate, job, source, source_details=""):
     return Application.objects.create(
         candidate=candidate, job=job, source=source, source_details=source_details
     )
+
+
+ALL_STAGES = "all"
+
+
+def filter_applications(job=None, stage="", query=""):
+    """Applications across all jobs for the workspace.
+
+    ``job`` limits them to one job opening. ``stage`` is a ``Stage`` value, or
+    ``ALL_STAGES``; anything else means the in-progress stages. ``query``
+    keeps applications whose candidate's first or last name contains every
+    word of it (any case).
+    """
+    applications = Application.objects.select_related("candidate", "job")
+    if job is not None:
+        applications = applications.filter(job=job)
+    if stage in Stage.values:
+        applications = applications.filter(stage=stage)
+    elif stage != ALL_STAGES:
+        applications = applications.filter(stage__in=IN_PROGRESS_STAGES)
+    for word in query.split():
+        applications = applications.filter(
+            Q(candidate__first_name__icontains=word) | Q(candidate__last_name__icontains=word)
+        )
+    return applications

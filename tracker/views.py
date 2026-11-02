@@ -1,10 +1,12 @@
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from . import services
 from .forms import ApplicationForm, CandidateForm, JobOpeningForm, SkillForm
-from .models import Candidate, JobOpening, JobStatus, Skill
+from .models import Application, Candidate, JobOpening, JobStatus, Skill, Stage
 from .permissions import admin_required
 
 
@@ -159,3 +161,45 @@ def job_reopen(request, pk):
     services.reopen_job(job)
     messages.success(request, f'Reopened "{job.title}".')
     return redirect(job)
+
+
+def application_workspace(request):
+    job_id = request.GET.get("job", "")
+    job = JobOpening.objects.filter(pk=job_id).first() if job_id.isdigit() else None
+    stage = request.GET.get("stage", "")
+    if stage != services.ALL_STAGES and stage not in Stage.values:
+        stage = ""
+    query = request.GET.get("q", "")
+    applications = services.filter_applications(job=job, stage=stage, query=query)
+
+    selected_id = request.GET.get("selected", "")
+    selected = None
+    other_applications = []
+    if selected_id.isdigit():
+        selected = (
+            Application.objects.select_related("candidate", "job").filter(pk=selected_id).first()
+        )
+    if selected is not None:
+        other_applications = selected.candidate.applications.exclude(pk=selected.pk).select_related(
+            "job"
+        )
+
+    # The current filters as a query string, so links to another application keep them.
+    filters = {"job": job.pk if job else "", "stage": stage, "q": query}
+    filter_query = urlencode({name: value for name, value in filters.items() if value})
+    return render(
+        request,
+        "tracker/applications/workspace.html",
+        {
+            "applications": applications,
+            "job": job,
+            "stage": stage,
+            "query": query,
+            "filter_query": filter_query,
+            "selected": selected,
+            "other_applications": other_applications,
+            "jobs": JobOpening.objects.all(),
+            "stage_choices": Stage.choices,
+            "all_stages": services.ALL_STAGES,
+        },
+    )

@@ -1,7 +1,8 @@
 import pytest
 
 from accounts.models import Role, User
-from tracker.models import Candidate, JobOpening, JobStatus
+from tracker import services
+from tracker.models import ApplicationSource, Candidate, JobOpening, JobStatus, Stage
 
 TEST_PASSWORD = "correct-horse-battery-staple"
 
@@ -62,3 +63,20 @@ def closed_job(db):
         description="Analyze data.",
         status=JobStatus.CLOSED,
     )
+
+
+@pytest.fixture
+def make_application(candidate, open_job):
+    """Build an application at a given stage (defaults: the ``candidate`` fixture, ``open_job``).
+
+    The stage is set directly, since stage moves arrive in a later phase.
+    """
+
+    def make(stage=Stage.APPLIED, candidate=candidate, job=open_job):
+        application = services.create_application(candidate, job, ApplicationSource.JOB_BOARD)
+        if stage != Stage.APPLIED:
+            application.stage = stage
+            application.save(update_fields=["stage", "updated_at"])
+        return application
+
+    return make

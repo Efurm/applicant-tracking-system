@@ -1,0 +1,49 @@
+{% extends "app_base.html" %}
+{% block title %}Workspace · Applicant Tracking System{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Applications workspace</h1>
+{% include "tracker/_messages.html" %}
+<div class="grid grid-cols-1 lg:grid-cols-[420px_1fr] gap-6 items-start">
+  <section class="bg-base-100 rounded-box shadow flex flex-col" aria-label="Applications">
+    <form method="get" action="{% url 'tracker:application_workspace' %}" class="p-3 flex flex-col gap-2 border-b border-base-300">
+      <label class="input input-sm w-full">
+        <span class="sr-only">Search by candidate name</span>
+        <input type="search" name="q" value="{{ query }}" placeholder="Search candidates by name…">
+      </label>
+      <div class="flex gap-2">
+        <select name="job" class="select select-sm flex-1" aria-label="Job" onchange="this.form.submit()">
+          <option value="">All jobs</option>
+          {% for option in jobs %}
+          <option value="{{ option.pk }}"{% if job and job.pk == option.pk %} selected{% endif %}>{{ option.title }}{% if not option.is_open %} (closed){% endif %}</option>
+          {% endfor %}
+        </select>
+        <select name="stage" class="select select-sm flex-1" aria-label="Stage" onchange="this.form.submit()">
+          <option value=""{% if not stage %} selected{% endif %}>In progress</option>
+          <option value="{{ all_stages }}"{% if stage == all_stages %} selected{% endif %}>All stages</option>
+          {% for value, label in stage_choices %}
+          <option value="{{ value }}"{% if stage == value %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-2 justify-end">
+        {% if job or stage or query %}<a href="{% url 'tracker:application_workspace' %}" class="btn btn-sm btn-ghost">Clear filters</a>{% endif %}
+        <button type="submit" class="btn btn-sm btn-primary">Search</button>
+      </div>
+    </form>
+    <ul class="menu w-full p-2">
+      {% for application in applications %}
+      {% include "tracker/applications/_row.html" %}
+      {% empty %}
+      <li class="opacity-70 p-4 text-sm">No matching applications.</li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section aria-label="Application details">
+    {% if selected %}
+    {% include "tracker/applications/_panel.html" with application=selected %}
+    {% else %}
+    <div class="bg-base-100 rounded-box shadow p-6 opacity-70">Select an application to see its details.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

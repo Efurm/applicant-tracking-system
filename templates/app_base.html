@@ -4,7 +4,7 @@
   <div class="flex-1 gap-2 items-center flex">
     <a href="{% url 'tracker:home' %}" class="btn btn-ghost text-lg">Applicant Tracker</a>
     <ul class="menu menu-horizontal px-1">
-      <li><a href="#">Workspace</a></li>
+      <li><a href="{% url 'tracker:application_workspace' %}">Workspace</a></li>
       <li><a href="{% url 'tracker:candidate_list' %}">Candidates</a></li>
       <li><a href="{% url 'tracker:job_list' %}">Job Openings</a></li>
       {% if user.is_admin %}

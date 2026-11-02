@@ -117,6 +117,20 @@ class Stage(models.TextChoices):
     WITHDRAWN = "withdrawn", "Withdrawn"
 
 
+# The main pipeline, in order. Rejected and Withdrawn can end an application from
+# any in-progress stage, so they sit outside it.
+PIPELINE_STAGES = (
+    Stage.APPLIED,
+    Stage.SCREENING,
+    Stage.INTERVIEW,
+    Stage.FINAL_REVIEW,
+    Stage.OFFER,
+    Stage.HIRED,
+)
+IN_PROGRESS_STAGES = PIPELINE_STAGES[:-1]
+FINAL_STAGES = (Stage.HIRED, Stage.REJECTED, Stage.WITHDRAWN)
+
+
 class Application(models.Model):
     """One candidate's application to one job opening, and where it stands."""
 
@@ -141,3 +155,26 @@ class Application(models.Model):
 
     def __str__(self):
         return f"{self.candidate} → {self.job}"
+
+    @property
+    def is_final(self):
+        return self.stage in FINAL_STAGES
+
+    def pipeline_progress(self):
+        """The pipeline stages, each with a state for the progress tracker.
+
+        Stages before the current one are "done", the current one is "current",
+        and later ones are "todo". Rejected and Withdrawn sit outside the
+        pipeline, so every step is "todo" for them.
+        """
+        current = PIPELINE_STAGES.index(self.stage) if self.stage in PIPELINE_STAGES else -1
+        steps = []
+        for index, stage in enumerate(PIPELINE_STAGES):
+            if current == -1 or index > current:
+                state = "todo"
+            elif index == current:
+                state = "current"
+            else:
+                state = "done"
+            steps.append({"stage": stage, "label": stage.label, "state": state})
+        return steps

@@ -30,6 +30,40 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 7: read-only applications workspace (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 7`
+2. `yes` (the three TDD behaviors: the in-progress default across all jobs, the `job`/`stage`/`q` filters restored from the URL, and the detail panel for `?selected=<pk>` with the candidate's other applications)
+3. `i approve` (RED test for behavior 1)
+4. `yes` (move on to behavior 2)
+5. `i approve` (RED test for behavior 2)
+6. `yes` (move on to behavior 3)
+7. `i approve` (RED test for behavior 3)
+8. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** The workspace is live at `/applications/` (`tracker:application_workspace`, both roles), laid out as the prototype's variant C list + detail.
+  - **Filters:**
+    - `filter_applications(job, stage, query)` is a new service. `stage` is a `Stage` value or `all`; blank or unknown means in-progress. Every word of `q` must match the first or last name.
+    - The view drops unknown job and stage values and passes the cleaned values back, so the filter controls show them.
+  - **Detail panel:**
+    - `?selected=<pk>` opens it. It shows contact info, the job and its status, the source and details, the applied date, and the current stage.
+    - The DaisyUI `steps` tracker comes from the new `Application.pipeline_progress()`.
+    - It links to the candidate's other applications, keeping the current filters.
+  - **New in `tracker/models.py`:** the module-level `PIPELINE_STAGES`, `IN_PROGRESS_STAGES`, and `FINAL_STAGES`, plus `Application.is_final`.
+  - **Templates:** the panel and the list row are partials (`_panel.html`, `_row.html`, with `id`s ready for Phase 8's HTMX swaps).
+  - **Other changes:** the Workspace nav link now points to the workspace, `make_application` moved to `conftest.py`, and CLAUDE.md's status and inventory were updated.
+  - **Tests:** 97 pass, 11 of them new. 3 behaviors were driven by TDD.
+- **Deviations:** None. All three behaviors and RED tests were approved unchanged. The agent made two design choices, both stated with the behavior 3 RED test before approval:
+  - Nothing is auto-selected when `selected` is absent. The prototype picked the first row instead.
+  - The other-application links keep the current filters, so the selected application may be missing from the list on the left.
+- **Sideways:**
+  - The first draft of test 1 used `make_application` on a closed job, which `create_application` refuses. The agent caught this before running it and recorded the applications before closing the job.
+  - The first draft of test 3 used `strftime("%-d")`, which doesn't work on Windows. It was replaced with Django's `dateformat` before the RED run.
+  - The panel links first used a bare `?…`. They were switched to the full `{% url %}` path the test expected.
+  - Two of the follow-up (non-TDD) tests failed at first because of mistakes in the tests. One picked up the tracker's `aria-current="step"`. The other expected a `selected` attribute on the default "All jobs" option. Both tests were corrected; the app code didn't change.
+
 ## 2026-11-02 — Implemented Phase 6: recording applications (TDD)
 
 ### Prompts

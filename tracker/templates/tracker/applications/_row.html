@@ -1,0 +1,11 @@
+<li id="application-row-{{ application.pk }}" data-application-row="{{ application.pk }}">
+  <a href="{% url 'tracker:application_workspace' %}?{% if filter_query %}{{ filter_query }}&{% endif %}selected={{ application.pk }}"
+     class="flex justify-between gap-2{% if selected and selected.pk == application.pk %} menu-active{% endif %}"
+     {% if selected and selected.pk == application.pk %}aria-current="true"{% endif %}>
+    <span>
+      <span class="font-medium">{{ application.candidate.full_name }}</span><br>
+      <span class="text-xs opacity-70">{{ application.job.title }}</span>
+    </span>
+    <span class="badge badge-sm {% if application.is_final %}badge-ghost{% else %}badge-outline{% endif %}" data-application-stage>{{ application.get_stage_display }}</span>
+  </a>
+</li>

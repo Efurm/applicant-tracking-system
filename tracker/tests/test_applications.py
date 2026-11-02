@@ -9,23 +9,6 @@ from tracker import services
 from tracker.models import Application, ApplicationSource, Candidate, JobOpening, Stage
 
 
-@pytest.fixture
-def make_application(candidate, open_job):
-    """Build an application at a given stage (defaults: the ``candidate`` fixture, ``open_job``).
-
-    The stage is set directly, since stage moves arrive in a later phase.
-    """
-
-    def make(stage=Stage.APPLIED, candidate=candidate, job=open_job):
-        application = services.create_application(candidate, job, ApplicationSource.JOB_BOARD)
-        if stage != Stage.APPLIED:
-            application.stage = stage
-            application.save(update_fields=["stage", "updated_at"])
-        return application
-
-    return make
-
-
 def test_create_application_refuses_a_closed_job_and_a_duplicate(candidate, open_job, closed_job):
     with pytest.raises(services.JobClosedToApplicants):
         services.create_application(candidate, closed_job, ApplicationSource.JOB_BOARD)

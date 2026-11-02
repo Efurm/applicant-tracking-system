@@ -1,0 +1,53 @@
+{% with candidate=application.candidate job=application.job %}
+<div id="application-panel" class="bg-base-100 rounded-box shadow p-6" data-panel="{{ application.pk }}">
+  <div class="flex justify-between items-start gap-4">
+    <div>
+      <h2 class="text-2xl font-bold">
+        <a href="{{ candidate.get_absolute_url }}" class="link link-hover" data-panel-field="name">{{ candidate.full_name }}</a>
+      </h2>
+      <a href="mailto:{{ candidate.email }}" class="link link-hover text-sm" data-panel-field="email">{{ candidate.email }}</a>
+    </div>
+    <span class="badge badge-lg {% if application.is_final %}badge-ghost{% else %}badge-primary{% endif %}" data-panel-field="stage">{{ application.get_stage_display }}</span>
+  </div>
+
+  <dl class="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 mt-4 text-sm">
+    <dt class="font-semibold">Phone</dt>
+    <dd class="sm:col-span-2"><span data-panel-field="phone">{{ candidate.phone|default:"—" }}</span></dd>
+    <dt class="font-semibold">LinkedIn/portfolio</dt>
+    <dd class="sm:col-span-2">{% if candidate.profile_url %}<a href="{{ candidate.profile_url }}" class="link break-all" target="_blank" rel="noopener" data-panel-field="profile_url">{{ candidate.profile_url }}</a>{% else %}<span data-panel-field="profile_url">—</span>{% endif %}</dd>
+    <dt class="font-semibold">Resume</dt>
+    <dd class="sm:col-span-2">{% if candidate.resume_url %}<a href="{{ candidate.resume_url }}" class="link break-all" target="_blank" rel="noopener" data-panel-field="resume_url">{{ candidate.resume_url }}</a>{% else %}<span data-panel-field="resume_url">—</span>{% endif %}</dd>
+    <dt class="font-semibold">Job</dt>
+    <dd class="sm:col-span-2 flex flex-wrap items-center gap-2">
+      <a href="{{ job.get_absolute_url }}" class="link link-hover font-medium" data-panel-field="job">{{ job.title }}</a>
+      <span class="badge badge-sm {% if job.is_open %}badge-success{% else %}badge-ghost{% endif %}" data-panel-field="job_status">{{ job.get_status_display }}</span>
+      {% if not job.is_open %}<span class="text-xs opacity-70">Closed to new applicants</span>{% endif %}
+    </dd>
+    <dt class="font-semibold">Source</dt>
+    <dd class="sm:col-span-2">
+      <span data-panel-field="source">{{ application.get_source_display }}</span>
+      {% if application.source_details %}<div class="text-xs opacity-70" data-panel-field="source_details">{{ application.source_details }}</div>{% endif %}
+    </dd>
+    <dt class="font-semibold">Applied on</dt>
+    <dd class="sm:col-span-2"><span data-panel-field="applied_on">{{ application.applied_on|date:"M j, Y" }}</span></dd>
+  </dl>
+
+  <ul class="steps w-full mt-6 text-xs" aria-label="Pipeline progress">
+    {% for step in application.pipeline_progress %}
+    <li class="step{% if step.state != 'todo' %} step-primary{% endif %}" data-step="{{ step.stage }}" data-step-state="{{ step.state }}"{% if step.state == "current" %} aria-current="step"{% endif %}>{{ step.label }}</li>
+    {% endfor %}
+  </ul>
+  {% if application.is_final and application.stage != "hired" %}
+  <div role="status" class="alert alert-soft mt-4 text-sm">This application ended as <strong>{{ application.get_stage_display }}</strong>.</div>
+  {% endif %}
+
+  {% if other_applications %}
+  <div class="divider text-xs">Other applications by this candidate</div>
+  <ul class="text-sm space-y-1">
+    {% for other in other_applications %}
+    <li><a href="{% url 'tracker:application_workspace' %}?{% if filter_query %}{{ filter_query }}&{% endif %}selected={{ other.pk }}" class="link" data-other-application="{{ other.pk }}">{{ other.job.title }} · {{ other.get_stage_display }}</a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endwith %}
