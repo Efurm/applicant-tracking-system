@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Tailwind CLI build output and downloaded binaries
+assets/css/tailwind.css
+.django_tailwind_cli/

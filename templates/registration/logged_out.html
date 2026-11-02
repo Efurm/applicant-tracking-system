@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Logged out · Applicant Tracking System{% endblock %}
+{% block body %}
+<div class="min-h-screen flex items-center justify-center p-4">
+  <div class="card w-full max-w-sm bg-base-100 shadow-xl">
+    <div class="card-body items-center text-center">
+      <h1 class="card-title text-2xl">You have been logged out</h1>
+      <p class="text-sm opacity-70">Nobody else can use your session on this computer.</p>
+      <a href="{% url 'login' %}" class="btn btn-primary mt-2">Log in again</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

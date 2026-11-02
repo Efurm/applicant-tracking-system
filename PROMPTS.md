@@ -30,6 +30,28 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 1: project skeleton and authentication (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 1`
+2. `i approve them` (the three TDD behaviors: anonymous redirect to login, Admin-only Skills nav link, login shows the user / deactivated user refused)
+3. `i approve` (RED test for behavior 1)
+4. `yes` (move on to behavior 2)
+5. `i approve` (RED test for behavior 2)
+6. `yes` (move on to behavior 3)
+7. `i approve` (RED test for behavior 3)
+8. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** A uv-managed Django 6.1 project (`config`) with `accounts` and `tracker` apps. `accounts.User` extends `AbstractUser` with a `role` field (Admin/Staff, default Staff) in its initial migration. The role drives Django's flags: Admins get `is_staff` and `is_superuser` so they can manage users at `/admin/`, Staff get neither, and `createsuperuser` produces an Admin. The User admin exposes role and active status and forbids deleting users. `LoginRequiredMiddleware` protects every page. DaisyUI-styled login, logged-out, and placeholder home pages share a nav shell (Workspace, Candidates, Job Openings, Admin-only Skills, current user and role, logout). Tailwind + DaisyUI (corporate theme) build through django-tailwind-cli. Ruff and pytest are configured; shared fixtures provide `admin_user`, `staff_user`, `admin_client`, and `staff_client`. There are 12 passing tests: 3 driven by TDD and 9 written normally for the User model, admin, and logout. The README gained setup steps.
+- **Deviations:** All three proposed TDD behaviors and their RED tests were approved unchanged. The agent chose, without asking, to give Admins `is_superuser` as well as `is_staff`. The PRD only mentions the staff flag, but with that flag alone an Admin can open `/admin/` yet has no permission to manage users there.
+- **Sideways:**
+  - The agent had already added `LoginRequiredMiddleware` and the "Signed in as" nav text while scaffolding, which would have made tests 1 and 3 pass without ever failing. It removed both before writing those tests so each started RED on an assertion, then restored them as the fix.
+  - The deactivated-user half of test 3 needed no new code; it locks in Django's built-in refusal of inactive accounts.
+  - `ruff check` flagged unused imports in Django's generated stub files, which were removed or emptied.
+  - DaisyUI 5 does not ship the `corporate` theme by default, so it was enabled in `frontend/source.css`.
+  - Nav links other than the home link point to `#` until their pages exist in later phases.
+
 ## 2026-11-01 — Grilled the project idea, prototyped two decisions, wrote the PRD
 
 ### Prompts

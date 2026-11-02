@@ -1,0 +1,33 @@
+[project]
+name = "applicant-tracking-system"
+version = "0.1.0"
+description = "Internal Django applicant tracking system for hiring teams"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "django>=6.1.2",
+    "django-tailwind-cli>=4.8.2",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-django>=4.14.0",
+    "ruff>=0.17.3",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["**/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "DJ"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py", "tests.py"]
+testpaths = ["accounts", "tracker"]

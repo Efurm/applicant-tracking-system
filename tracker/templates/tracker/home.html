@@ -1,0 +1,10 @@
+{% extends "app_base.html" %}
+{% block title %}Home · Applicant Tracking System{% endblock %}
+{% block content %}
+<div class="card bg-base-100 shadow">
+  <div class="card-body">
+    <h1 class="card-title text-2xl">Welcome, {{ user.first_name|default:user.username }}</h1>
+    <p>The workspace, candidates, and job openings are coming in later phases.</p>
+  </div>
+</div>
+{% endblock %}
