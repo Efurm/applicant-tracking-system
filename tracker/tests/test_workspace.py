@@ -212,7 +212,6 @@ def test_the_tracker_for_final_stages(staff_client, make_application):
     response = staff_client.get(WORKSPACE_URL, {"selected": application.pk})
     states = [attrs["data-step-state"] for _, attrs, _ in _marked(response, "data-step")]
     assert states == ["done"] * 5 + ["current"]
-    assert "This application ended as" not in response.content.decode()
 
     application.stage = Stage.REJECTED
     application.save()

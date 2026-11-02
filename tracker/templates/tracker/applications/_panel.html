@@ -37,8 +37,8 @@
     <li class="step{% if step.state != 'todo' %} step-primary{% endif %}" data-step="{{ step.stage }}" data-step-state="{{ step.state }}"{% if step.state == "current" %} aria-current="step"{% endif %}>{{ step.label }}</li>
     {% endfor %}
   </ul>
-  {% if application.is_final and application.stage != "hired" %}
-  <div role="status" class="alert alert-soft mt-4 text-sm">This application ended as <strong>{{ application.get_stage_display }}</strong>.</div>
+  {% if application.is_final %}
+  <div role="status" class="alert alert-soft mt-4 text-sm" data-final-message>This application ended as <strong>{{ application.get_stage_display }}</strong>. It is final, so it can't be moved.</div>
   {% endif %}
 
   {% if move_error %}
@@ -53,12 +53,25 @@
         hx-target="#application-panel" hx-swap="outerHTML"
         class="mt-4" data-move-form>
     {% csrf_token %}
+    {% if forward_moves %}
     <div class="text-sm font-semibold mb-2">Move to</div>
     <div class="flex flex-wrap gap-2">
-      {% for next_stage in allowed_moves %}
+      {% for next_stage in forward_moves %}
       <button type="submit" name="stage" value="{{ next_stage.value }}" class="btn btn-sm btn-outline btn-primary" data-move-to="{{ next_stage.value }}">{{ next_stage.label }}</button>
       {% endfor %}
     </div>
+    {% endif %}
+    {% if ending_moves %}
+    <div class="text-sm font-semibold mt-4 mb-2">End this application</div>
+    <div class="flex flex-wrap gap-2">
+      {% for next_stage in ending_moves %}
+      <button type="submit" name="stage" value="{{ next_stage.value }}"
+              class="btn btn-sm {% if next_stage == 'rejected' %}btn-error{% else %}btn-warning{% endif %} btn-outline"
+              onclick="return confirm('Mark {{ candidate.full_name|escapejs }} as {{ next_stage.label }} for this job? Staff can\'t undo this.')"
+              data-end-to="{{ next_stage.value }}">{% if next_stage == 'rejected' %}Reject{% else %}Withdraw{% endif %}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
   </form>
   {% endif %}
 

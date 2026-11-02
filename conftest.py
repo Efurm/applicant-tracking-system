@@ -69,18 +69,14 @@ def closed_job(db):
 def make_application(candidate, open_job, staff_user):
     """Build an application at a given stage (defaults: the ``candidate`` fixture, ``open_job``).
 
-    Pipeline stages are reached with one move by ``staff_user`` through the
-    move service. Rejected and Withdrawn aren't allowed moves yet (Phase 9),
-    so for now those are set directly.
+    Any other stage is reached with one move from Applied by ``staff_user``
+    through the move service, so the application has a matching StageChange.
     """
 
     def make(stage=Stage.APPLIED, candidate=candidate, job=open_job):
         application = services.create_application(candidate, job, ApplicationSource.JOB_BOARD)
-        if stage in services.allowed_next_stages(application.stage, staff_user):
+        if stage != Stage.APPLIED:
             services.move_application(application, stage, staff_user)
-        elif stage != Stage.APPLIED:
-            application.stage = stage
-            application.save(update_fields=["stage", "updated_at"])
         return application
 
     return make

@@ -182,7 +182,12 @@ def _workspace_filters(request):
 
 
 def _panel_context(request, application, filter_query, move_error=None):
-    """What the detail panel (and its list row) need to render ``application``."""
+    """What the detail panel (and its list row) need to render ``application``.
+
+    The allowed moves are split into forward moves and endings (Reject and
+    Withdraw), which the panel draws as separate controls.
+    """
+    allowed = services.allowed_next_stages(application.stage, request.user)
     return {
         "application": application,
         "selected": application,
@@ -190,7 +195,9 @@ def _panel_context(request, application, filter_query, move_error=None):
         "other_applications": application.candidate.applications.exclude(
             pk=application.pk
         ).select_related("job"),
-        "allowed_moves": services.allowed_next_stages(application.stage, request.user),
+        "allowed_moves": allowed,
+        "forward_moves": [s for s in allowed if s not in services.ENDING_STAGES],
+        "ending_moves": [s for s in allowed if s in services.ENDING_STAGES],
         "move_error": move_error,
     }
 

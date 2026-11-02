@@ -263,6 +263,9 @@ def filter_applications(job=None, stage="", query=""):
     return applications
 
 
+ENDING_STAGES = (Stage.REJECTED, Stage.WITHDRAWN)
+
+
 class InvalidStageMove(ValidationError):
     """The application can't move from its current stage to the requested one."""
 
@@ -280,13 +283,13 @@ def allowed_next_stages(stage, user):
     """The stages an application at ``stage`` may move to when ``user`` moves it.
 
     This one rule drives both the move buttons and the move service's
-    validation. For now only forward moves exist: from an in-progress stage,
-    any later pipeline stage (skipping allowed). ``user`` is unused until
-    Admin reopens arrive.
+    validation. From an in-progress stage: any later pipeline stage (skipping
+    allowed), then Rejected or Withdrawn. Final stages offer nothing. ``user``
+    is unused until Admin reopens arrive.
     """
     if stage not in IN_PROGRESS_STAGES:
         return ()
-    return PIPELINE_STAGES[PIPELINE_STAGES.index(stage) + 1 :]
+    return PIPELINE_STAGES[PIPELINE_STAGES.index(stage) + 1 :] + ENDING_STAGES
 
 
 @transaction.atomic

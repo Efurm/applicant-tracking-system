@@ -30,6 +30,36 @@ Each entry has this shape:
 
 ---
 
+## 2026-11-02 — Implemented Phase 9: Rejected, Withdrawn, and the final lock (TDD)
+
+### Prompts
+1. `/implement @prd/applicant-tracking-system.md @plans/applicant-tracking-system.md implement Phase 9`
+2. `yes` (the two TDD behaviors: `allowed_next_stages` for every stage as Staff, and the panel's Reject/Withdraw controls vs. final messaging)
+3. `yes` (RED test for behavior 1)
+4. `yes` (move on to behavior 2)
+5. `yes` (RED test for behavior 2, including dropping one assertion from an existing workspace test)
+6. `yes` (finish the rest of the phase normally)
+
+### Summary
+- **Outcome:** In-progress applications can now be ended as Rejected or Withdrawn, and final applications are locked.
+  - **Service:** `services.ENDING_STAGES = (Rejected, Withdrawn)`. `allowed_next_stages` returns the later pipeline stages plus `ENDING_STAGES` from any in-progress stage, and nothing from Hired, Rejected, or Withdrawn. `move_application` validates against it, so the server accepts endings and refuses every move out of a final stage with `InvalidStageMove`.
+  - **Panel:** `_panel_context` splits the allowed moves into `forward_moves` and `ending_moves`. In-progress applications show the "Move to" buttons plus an "End this application" group with Reject (red) and Withdraw (amber) buttons. Each asks for `confirm()` and shares the existing HTMX move form. Final applications (now including Hired) show "This application ended as X. It is final, so it can't be moved." (`data-final-message`) and no move form.
+  - **Fixture:** `make_application` no longer sets Rejected/Withdrawn directly. Every non-Applied stage is reached with one `move_application` by `staff_user`.
+  - **Tests:** 152 pass (up from 118). New tests cover:
+    - `allowed_next_stages` for all eight stages as Staff, plus an Admin-matches-Staff guard for in-progress stages
+    - the panel's ending controls and final message for each final stage
+    - rejecting or withdrawing from every in-progress stage, with a `StageChange` written
+    - an HTMX reject that returns the final panel and row
+    - direct POSTs out of each final stage refused with a message and no data change
+  - CLAUDE.md's status, inventory, and test hooks were updated, and Phase 10 is listed as next.
+- **Deviations:**
+  - The agent proposed two TDD behaviors instead of three. "A direct POST out of a final stage is refused" already passed before this phase, so it couldn't start RED; it was tested normally instead.
+  - Behavior 2's approved test meant dropping one assertion from the Phase 7 test `test_the_tracker_for_final_stages`, which had said Hired shows no "ended as" message. The agent flagged this before the user approved.
+- **Sideways:**
+  - After behavior 1 went GREEN, `test_the_panel_offers_one_move_button_per_allowed_stage` failed, because Rejected and Withdrawn appeared as extra forward buttons. The agent reported this as expected, and behavior 2's separate `data-end-to` controls fixed it without changing that test.
+  - The full suite now takes about 4 minutes (it was about 3.5). CLAUDE.md was updated to match.
+  - CLAUDE.md already had uncommitted edits from the user (a tighter Commands and Status section) when the session started. They were kept and committed with this phase's updates.
+
 ## 2026-11-02 — Implemented Phase 8: HTMX forward stage moves (TDD)
 
 ### Prompts

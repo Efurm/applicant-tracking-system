@@ -5,10 +5,13 @@ from django.urls import reverse
 from django.utils.html import escape
 
 from tracker import services
-from tracker.models import JobOpening, Stage, StageChange
+from tracker.models import FINAL_STAGES, IN_PROGRESS_STAGES, JobOpening, Stage, StageChange
 from tracker.tests.html import marked
 
 WORKSPACE_URL = reverse("tracker:application_workspace")
+
+
+ENDINGS = [Stage.REJECTED, Stage.WITHDRAWN]
 
 
 @pytest.mark.parametrize(
@@ -16,19 +19,32 @@ WORKSPACE_URL = reverse("tracker:application_workspace")
     [
         (
             Stage.APPLIED,
-            [Stage.SCREENING, Stage.INTERVIEW, Stage.FINAL_REVIEW, Stage.OFFER, Stage.HIRED],
+            [Stage.SCREENING, Stage.INTERVIEW, Stage.FINAL_REVIEW, Stage.OFFER, Stage.HIRED]
+            + ENDINGS,
         ),
-        (Stage.SCREENING, [Stage.INTERVIEW, Stage.FINAL_REVIEW, Stage.OFFER, Stage.HIRED]),
-        (Stage.INTERVIEW, [Stage.FINAL_REVIEW, Stage.OFFER, Stage.HIRED]),
-        (Stage.FINAL_REVIEW, [Stage.OFFER, Stage.HIRED]),
-        (Stage.OFFER, [Stage.HIRED]),
+        (
+            Stage.SCREENING,
+            [Stage.INTERVIEW, Stage.FINAL_REVIEW, Stage.OFFER, Stage.HIRED] + ENDINGS,
+        ),
+        (Stage.INTERVIEW, [Stage.FINAL_REVIEW, Stage.OFFER, Stage.HIRED] + ENDINGS),
+        (Stage.FINAL_REVIEW, [Stage.OFFER, Stage.HIRED] + ENDINGS),
+        (Stage.OFFER, [Stage.HIRED] + ENDINGS),
+        (Stage.HIRED, []),
+        (Stage.REJECTED, []),
+        (Stage.WITHDRAWN, []),
     ],
 )
-def test_allowed_next_stages_offers_every_later_pipeline_stage_for_both_roles(
-    stage, expected, admin_user, staff_user
+def test_allowed_next_stages_offers_later_stages_and_endings_then_locks_final_stages_for_staff(
+    stage, expected, staff_user
 ):
-    for user in (staff_user, admin_user):
-        assert list(services.allowed_next_stages(stage, user)) == expected
+    assert list(services.allowed_next_stages(stage, staff_user)) == expected
+
+
+@pytest.mark.parametrize("stage", IN_PROGRESS_STAGES)
+def test_admins_get_the_same_moves_as_staff_from_in_progress_stages(stage, admin_user, staff_user):
+    assert list(services.allowed_next_stages(stage, admin_user)) == list(
+        services.allowed_next_stages(stage, staff_user)
+    )
 
 
 def test_move_application_updates_the_stage_and_records_who_moved_it_even_on_a_closed_job(
@@ -63,6 +79,26 @@ def test_move_application_refuses_backward_same_stage_and_unknown_moves_without_
     application.refresh_from_db()
     assert application.stage == Stage.INTERVIEW
     assert list(StageChange.objects.values_list("pk", flat=True)) == changes_before
+
+
+@pytest.mark.parametrize("from_stage", IN_PROGRESS_STAGES)
+@pytest.mark.parametrize("ending", ENDINGS)
+def test_any_in_progress_application_can_be_rejected_or_withdrawn(
+    from_stage, ending, staff_user, make_application
+):
+    application = make_application(from_stage)
+
+    services.move_application(application, ending, staff_user)
+
+    application.refresh_from_db()
+    assert application.stage == ending
+    assert application.is_final
+    change = application.stage_changes.last()
+    assert (change.from_stage, change.to_stage, change.changed_by) == (
+        from_stage,
+        ending,
+        staff_user,
+    )
 
 
 def _move(client, application, stage):
@@ -112,6 +148,48 @@ def test_htmx_move_refuses_a_backward_move_in_place_without_changing_data(
     assert list(StageChange.objects.values_list("pk", flat=True)) == changes_before
 
 
+def test_htmx_reject_ends_the_application_and_shows_final_messaging(
+    staff_client, staff_user, make_application
+):
+    application = make_application(Stage.FINAL_REVIEW)
+
+    response = _move(staff_client, application, Stage.REJECTED)
+
+    assert response.status_code == 200
+    stage_fields = [
+        text for value, _, text in marked(response, "data-panel-field") if value == "stage"
+    ]
+    assert stage_fields == ["Rejected"]
+    assert marked(response, "data-move-form") == []
+    assert len(marked(response, "data-final-message")) == 1
+    [(_, _, row_text)] = marked(response, "data-application-row")
+    assert "Rejected" in row_text
+    application.refresh_from_db()
+    assert application.stage == Stage.REJECTED
+    assert application.stage_changes.last().changed_by == staff_user
+
+
+@pytest.mark.parametrize("final_stage", FINAL_STAGES)
+@pytest.mark.parametrize("to_stage", [Stage.APPLIED, Stage.OFFER, Stage.REJECTED, Stage.WITHDRAWN])
+def test_a_direct_post_out_of_a_final_stage_is_refused_without_changing_data(
+    final_stage, to_stage, staff_client, make_application
+):
+    application = make_application(final_stage)
+    changes_before = list(StageChange.objects.values_list("pk", flat=True))
+
+    response = _move(staff_client, application, to_stage)
+
+    assert response.status_code == 200
+    [(_, _, error)] = marked(response, "data-move-error")
+    assert error == (
+        f"Can't move this application from {Stage(final_stage).label} to {Stage(to_stage).label}."
+    )
+    assert marked(response, "data-move-form") == []
+    application.refresh_from_db()
+    assert application.stage == final_stage
+    assert list(StageChange.objects.values_list("pk", flat=True)) == changes_before
+
+
 def test_the_panel_offers_one_move_button_per_allowed_stage(staff_client, make_application):
     application = make_application(Stage.INTERVIEW)
 
@@ -128,6 +206,30 @@ def test_a_hired_application_offers_no_move_buttons(staff_client, make_applicati
 
     assert marked(response, "data-panel")
     assert marked(response, "data-move-form") == []
+
+
+@pytest.mark.parametrize("final_stage", FINAL_STAGES)
+def test_the_panel_offers_reject_and_withdraw_while_in_progress_and_final_messaging_after(
+    final_stage, staff_client, candidate, make_application
+):
+    in_progress = make_application(Stage.INTERVIEW)
+    second_job = JobOpening.objects.create(
+        title="Data Analyst", department="Finance", description="Analyze data."
+    )
+    final = make_application(final_stage, candidate=candidate, job=second_job)
+
+    response = staff_client.get(WORKSPACE_URL, {"selected": in_progress.pk})
+    endings = [value for value, _, _ in marked(response, "data-end-to")]
+    assert endings == [Stage.REJECTED, Stage.WITHDRAWN]
+    assert marked(response, "data-final-message") == []
+
+    response = staff_client.get(WORKSPACE_URL, {"selected": final.pk, "stage": "all"})
+    assert marked(response, "data-move-form") == []
+    assert marked(response, "data-end-to") == []
+    [(_, _, message)] = marked(response, "data-final-message")
+    assert message == (
+        f"This application ended as {Stage(final_stage).label}. It is final, so it can't be moved."
+    )
 
 
 def test_the_workspace_page_loads_htmx(staff_client):
